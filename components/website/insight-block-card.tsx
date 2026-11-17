@@ -9,7 +9,22 @@ import {
 import { useFullSave } from "@/components/website/full-save-registry";
 import { ConfirmDialog } from "@/components/website/confirm-dialog";
 import { ImageUploader, type UploadedMedia } from "@/components/website/image-uploader";
+import { AltSuggestStatusLine, confirmOverwriteAlt } from "@/components/website/alt-suggest-ui";
 import { LeadHtmlModal } from "@/components/website/lead-html-modal";
+import {
+  requestAltSuggest,
+  resolveImageUrlForAlt,
+  shouldAutoFillAlt,
+  type AltSuggestStatus
+} from "@/lib/website/alt-suggest-client";
+import type { AltSuggestContext } from "@/lib/website/alt-suggest-types";
+import {
+  clearPendingAlt,
+  getPendingAlt,
+  setPendingAlt,
+  subscribePendingAlt
+} from "@/lib/website/alt-suggest-pending";
+import { isPlaceholderAlt } from "@/lib/website/placeholder-alt";
 import {
   PartialSaveBtn,
   type PartialSaveState
@@ -103,6 +118,7 @@ type Props = {
   portrait: string;
   pressPerson: string;
   pressRole: string;
+  altContext?: AltSuggestContext | null;
 };
 
 export function InsightBlockCard({
@@ -119,7 +135,8 @@ export function InsightBlockCard({
   onReload,
   portrait,
   pressPerson,
-  pressRole
+  pressRole,
+  altContext = null
 }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -615,6 +632,7 @@ export function InsightBlockCard({
               insightId={insightId}
               siteUrl={siteUrl}
               uploadRoot={uploadRoot}
+              altContext={altContext}
               atLimit={atLimit}
               onReload={onReload}
               onError={setError}
@@ -768,6 +786,7 @@ function InsightImages({
   insightId,
   siteUrl,
   uploadRoot,
+  altContext,
   atLimit,
   onReload,
   onError,
@@ -778,6 +797,7 @@ function InsightImages({
   insightId: string;
   siteUrl: string;
   uploadRoot: string;
+  altContext?: AltSuggestContext | null;
   atLimit: boolean;
   onReload: () => Promise<void>;
   onError: (msg: string | null) => void;
@@ -799,6 +819,21 @@ function InsightImages({
       return;
     }
     await onReload();
+    if (!altContext) return;
+    for (const file of files) {
+      const url = resolveImageUrlForAlt(siteUrl, file.src);
+      if (!url) {
+        setPendingAlt(file.src, "failed");
+        continue;
+      }
+      setPendingAlt(file.src, "loading");
+      void requestAltSuggest({
+        imageUrl: url,
+        context: { ...altContext, fileName: file.name }
+      }).then((result) => {
+        setPendingAlt(file.src, result ?? "failed");
+      });
+    }
   }
 
   return (
@@ -812,6 +847,8 @@ function InsightImages({
             name={fileName(image.src)}
             image={image}
             blockId={blockId}
+            siteUrl={siteUrl}
+            altContext={altContext}
             onReload={onReload}
             onError={onError}
             onQueueImage={onQueueImage}
@@ -840,6 +877,8 @@ function InsightImageRow({
   name,
   image,
   blockId,
+  siteUrl,
+  altContext,
   onReload,
   onError,
   onQueueImage
@@ -848,6 +887,8 @@ function InsightImageRow({
   name: string;
   image: NonNullable<InsightBlock["insight_images"]>[number];
   blockId: string;
+  siteUrl: string;
+  altContext?: AltSuggestContext | null;
   onReload: () => Promise<void>;
   onError: (msg: string | null) => void;
   onQueueImage: (imageId: string, patch: Record<string, unknown>) => void;
@@ -855,12 +896,41 @@ function InsightImageRow({
   const [alt, setAlt] = useState<Loc>(asLoc(image.alt));
   const [caption, setCaption] = useState<Loc>(asLoc(image.caption));
   const [visible, setVisible] = useState(Boolean(image.caption_visible));
+  const [altAi, setAltAi] = useState<AltSuggestStatus>("idle");
+  const altRef = useRef(alt);
+  altRef.current = alt;
 
   useEffect(() => {
     setAlt(asLoc(image.alt));
     setCaption(asLoc(image.caption));
     setVisible(Boolean(image.caption_visible));
   }, [image]);
+
+  useEffect(() => {
+    function applyPending() {
+      const pending = getPendingAlt(image.src);
+      if (!pending) return;
+      if (pending === "loading") {
+        setAltAi("loading");
+        return;
+      }
+      if (pending === "failed") {
+        setAltAi("failed");
+        clearPendingAlt(image.src);
+        return;
+      }
+      if (!shouldAutoFillAlt(altRef.current.ko)) {
+        clearPendingAlt(image.src);
+        return;
+      }
+      altRef.current = pending;
+      setAlt(pending);
+      setAltAi("filled");
+      clearPendingAlt(image.src);
+    }
+    applyPending();
+    return subscribePendingAlt(applyPending);
+  }, [image.src]);
 
   return (
     <div className="flex gap-3">
@@ -904,6 +974,7 @@ function InsightImageRow({
               <TextInput
                 value={alt.ko}
                 onChange={(v) => {
+                  if (altAi !== "idle") setAltAi("idle");
                   const next = locField(alt, "ko", v);
                   setAlt(next);
                   onQueueImage(image.id, { alt: next });
@@ -915,6 +986,7 @@ function InsightImageRow({
               <TextInput
                 value={alt.en}
                 onChange={(v) => {
+                  if (altAi !== "idle") setAltAi("idle");
                   const next = locField(alt, "en", v);
                   setAlt(next);
                   onQueueImage(image.id, { alt: next });
@@ -922,6 +994,33 @@ function InsightImageRow({
               />
             </div>
           </div>
+          <AltSuggestStatusLine
+            status={altAi}
+            canRewrite={Boolean(image.src?.trim()) && Boolean(altContext)}
+            onRewrite={() => {
+              void (async () => {
+                if (!altContext) return;
+                if (!confirmOverwriteAlt(!isPlaceholderAlt(altRef.current.ko))) return;
+                const url = resolveImageUrlForAlt(siteUrl, image.src);
+                if (!url) {
+                  setAltAi("failed");
+                  return;
+                }
+                setAltAi("loading");
+                const result = await requestAltSuggest({
+                  imageUrl: url,
+                  context: { ...altContext, fileName: name }
+                });
+                if (!result) {
+                  setAltAi("failed");
+                  return;
+                }
+                altRef.current = result;
+                setAlt(result);
+                setAltAi("filled");
+              })();
+            }}
+          />
         </Field>
         <Field
           label="캡션"

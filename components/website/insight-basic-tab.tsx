@@ -2,7 +2,15 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ImageUploader } from "@/components/website/image-uploader";
+import { AltSuggestStatusLine, confirmOverwriteAlt } from "@/components/website/alt-suggest-ui";
 import { CardLengthCount, CardLengthWarn } from "@/components/website/insight-card-length";
+import {
+  requestAltSuggest,
+  resolveImageUrlForAlt,
+  shouldAutoFillAlt,
+  type AltSuggestStatus
+} from "@/lib/website/alt-suggest-client";
+import { isPlaceholderAlt } from "@/lib/website/placeholder-alt";
 import {
   InsightCropModal,
   ratioFromSize,
@@ -222,6 +230,7 @@ export function InsightBasicTab({ draft, onChange, insight, categories, siteUrl,
   const tags = [...(insight.insight_tags ?? [])].sort((a, b) => a.sort - b.sort);
   const [openHelp, setOpenHelp] = useState<keyof typeof HELP | null>(null);
   const [cropOpen, setCropOpen] = useState(false);
+  const [keyAltAi, setKeyAltAi] = useState<AltSuggestStatus>("idle");
   const [slugBusy, setSlugBusy] = useState(false);
   const [slugError, setSlugError] = useState<string | null>(null);
   const draftRef = useRef(draft);
@@ -231,6 +240,47 @@ export function InsightBasicTab({ draft, onChange, insight, categories, siteUrl,
   const slugSeqRef = useRef(0);
   const canAutoSlug = insight.status !== "published";
   const mediaPartial = useMediaManualPartialSave(onReload);
+
+  const buildKeyAltContext = useCallback(() => {
+    const d = draftRef.current;
+    const cat = categories.find((c) => c.id === d.category_id)?.label;
+    return {
+      kind: "insight" as const,
+      titleKo: d.title.ko,
+      titleEn: d.title.en,
+      category: cat?.en?.trim() || cat?.ko?.trim() || null,
+      locationCity: null,
+      locationCountry: null,
+      fileName: null as string | null
+    };
+  }, [categories]);
+
+  const fillKeyAltFromAi = useCallback(
+    async (imageSrc: string, fileName: string | null, force: boolean) => {
+      const url = resolveImageUrlForAlt(siteUrl, imageSrc);
+      if (!url) {
+        setKeyAltAi("failed");
+        return;
+      }
+      const currentKo = draftRef.current.key_image_alt.ko;
+      if (!force && !shouldAutoFillAlt(currentKo)) return;
+      if (force && !confirmOverwriteAlt(!isPlaceholderAlt(currentKo))) return;
+      setKeyAltAi("loading");
+      const result = await requestAltSuggest({
+        imageUrl: url,
+        context: { ...buildKeyAltContext(), fileName }
+      });
+      if (!result) {
+        setKeyAltAi("failed");
+        return;
+      }
+      const patch = { key_image_alt: { ko: result.ko, en: result.en } };
+      draftRef.current = { ...draftRef.current, ...patch };
+      onChange(patch);
+      setKeyAltAi("filled");
+    },
+    [siteUrl, buildKeyAltContext, onChange]
+  );
 
   const persistScreen = useCallback(async () => {
     const d = draftRef.current;
@@ -691,6 +741,7 @@ export function InsightBasicTab({ draft, onChange, insight, categories, siteUrl,
                     key_image_height: first.height,
                     key_image_ratio: (inferred as KeyImageRatio | null) || draft.key_image_ratio || ""
                   });
+                  void fillKeyAltFromAi(first.src, first.name, false);
                 }}
                 onClear={() =>
                   patchMedia({
@@ -832,24 +883,31 @@ export function InsightBasicTab({ draft, onChange, insight, categories, siteUrl,
               <input
                 className="i"
                 value={draft.key_image_alt.ko}
-                onChange={(e) =>
+                onChange={(e) => {
+                  if (keyAltAi !== "idle") setKeyAltAi("idle");
                   patchSearch({
                     key_image_alt: { ...draft.key_image_alt, ko: e.target.value }
-                  })
-                }
+                  });
+                }}
                 onBlur={() => void searchAuto.flush()}
               />
               <input
                 className="i"
                 value={draft.key_image_alt.en}
-                onChange={(e) =>
+                onChange={(e) => {
+                  if (keyAltAi !== "idle") setKeyAltAi("idle");
                   patchSearch({
                     key_image_alt: { ...draft.key_image_alt, en: e.target.value }
-                  })
-                }
+                  });
+                }}
                 onBlur={() => void searchAuto.flush()}
               />
             </div>
+            <AltSuggestStatusLine
+              status={keyAltAi}
+              canRewrite={Boolean(draft.key_image?.trim())}
+              onRewrite={() => void fillKeyAltFromAi(draft.key_image, null, true)}
+            />
             <p className="hint-line">이미지를 못 보는 사람과 AI 가 읽습니다</p>
             <HelpPanel open={openHelp === "alt"} body={HELP.alt} onClose={() => setOpenHelp(null)} />
           </div>

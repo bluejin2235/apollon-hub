@@ -18,7 +18,15 @@ import { sanitizeUploadFilename, uploadObjectPath, workFolderPrefix } from "@/li
 import { prepareImageForUpload } from "@/lib/website/prepare-upload-image";
 import { describeUploadError } from "@/lib/website/upload-error";
 import { ImageUploader, type UploadedMedia } from "@/components/website/image-uploader";
+import { AltSuggestStatusLine, confirmOverwriteAlt } from "@/components/website/alt-suggest-ui";
 import { InsightCropModal } from "@/components/website/insight-crop-modal";
+import {
+  requestAltSuggest,
+  resolveImageUrlForAlt,
+  shouldAutoFillAlt,
+  type AltSuggestStatus
+} from "@/lib/website/alt-suggest-client";
+import { isPlaceholderAlt } from "@/lib/website/placeholder-alt";
 import { useFullSave } from "@/components/website/full-save-registry";
 import { AutoSaveLabel, PartialSaveBtn, type PartialSaveState } from "@/components/website/partial-save-btn";
 import { useAutoPartialSave } from "@/components/website/use-auto-partial-save";
@@ -409,6 +417,7 @@ export function WorkBasicTab({ draft, onChange, work, categories, siteUrl, onRel
   const [slugBusy, setSlugBusy] = useState(false);
   const [slugError, setSlugError] = useState<string | null>(null);
   const [cropOpen, setCropOpen] = useState(false);
+  const [keyAltAi, setKeyAltAi] = useState<AltSuggestStatus>("idle");
   const pendingKey = useId();
   const loopLgFile = useRef<File | null>(null);
   const cardUploadRef = useRef<HTMLInputElement>(null);
@@ -427,6 +436,51 @@ export function WorkBasicTab({ draft, onChange, work, categories, siteUrl, onRel
   );
   const canAutoSlug = work.status !== "published";
   const mediaPartial = useMediaManualPartialSave(onReload);
+
+  const buildKeyAltContext = useCallback(() => {
+    const d = draftRef.current;
+    const cats = d.category_ids
+      .map((id) => {
+        const label = categories.find((c) => c.id === id)?.label;
+        return label?.en?.trim() || label?.ko?.trim() || "";
+      })
+      .filter(Boolean)
+      .join(" · ");
+    return {
+      kind: "work" as const,
+      titleKo: d.title.ko || d.title.en,
+      titleEn: d.title.en,
+      category: cats || null,
+      locationCity: d.location_city.en || d.location_city.ko,
+      locationCountry: d.location_country.en || d.location_country.ko,
+      fileName: null as string | null
+    };
+  }, [categories]);
+
+  const fillKeyAltFromAi = useCallback(
+    async (imageSrc: string, fileName: string | null, force: boolean) => {
+      const url = resolveImageUrlForAlt(siteUrl, imageSrc);
+      if (!url) {
+        setKeyAltAi("failed");
+        return;
+      }
+      const currentKo = draftRef.current.key_image_alt.ko;
+      if (!force && !shouldAutoFillAlt(currentKo)) return;
+      if (force && !confirmOverwriteAlt(!isPlaceholderAlt(currentKo))) return;
+      setKeyAltAi("loading");
+      const result = await requestAltSuggest({
+        imageUrl: url,
+        context: { ...buildKeyAltContext(), fileName }
+      });
+      if (!result) {
+        setKeyAltAi("failed");
+        return;
+      }
+      writeDraft({ key_image_alt: { ko: result.ko, en: result.en } });
+      setKeyAltAi("filled");
+    },
+    [siteUrl, buildKeyAltContext, writeDraft]
+  );
 
   const persistScreen = useCallback(async () => {
     const d = draftRef.current;
@@ -1104,6 +1158,7 @@ export function WorkBasicTab({ draft, onChange, work, categories, siteUrl, onRel
                     patch.card_image_height = first.height;
                   }
                   onChange(patch);
+                  void fillKeyAltFromAi(first.src, first.name, false);
                 }}
                 onClear={() => {
                   mediaPartial.markDirty();
@@ -1465,6 +1520,7 @@ export function WorkBasicTab({ draft, onChange, work, categories, siteUrl, onRel
                 className="i"
                 value={draft.key_image_alt.ko}
                 onChange={(e) => {
+                  if (keyAltAi !== "idle") setKeyAltAi("idle");
                   writeDraft({
                     key_image_alt: { ...draft.key_image_alt, ko: e.target.value }
                   });
@@ -1476,6 +1532,7 @@ export function WorkBasicTab({ draft, onChange, work, categories, siteUrl, onRel
                 className="i"
                 value={draft.key_image_alt.en}
                 onChange={(e) => {
+                  if (keyAltAi !== "idle") setKeyAltAi("idle");
                   writeDraft({
                     key_image_alt: { ...draft.key_image_alt, en: e.target.value }
                   });
@@ -1484,6 +1541,13 @@ export function WorkBasicTab({ draft, onChange, work, categories, siteUrl, onRel
                 onBlur={() => void searchAuto.flush()}
               />
             </div>
+            <AltSuggestStatusLine
+              status={keyAltAi}
+              canRewrite={Boolean(draft.key_image?.trim())}
+              onRewrite={() =>
+                void fillKeyAltFromAi(draft.key_image, null, true)
+              }
+            />
             <p className="hint-line">이미지를 못 보는 사람과 AI 가 읽습니다</p>
             <HelpPanel
               open={openHelp === "alt"}

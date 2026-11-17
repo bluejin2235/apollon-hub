@@ -15,6 +15,7 @@ import { asLoc } from "@/lib/website/work-detail";
 import { workFolderPrefix } from "@/lib/website/upload-path";
 import { BlockCard } from "@/components/website/block-card";
 import { useFullSave } from "@/components/website/full-save-registry";
+import type { AltSuggestContext } from "@/lib/website/alt-suggest-types";
 import { BlockPicker } from "@/components/website/block-picker";
 import { ConfirmDialog } from "@/components/website/confirm-dialog";
 import { LeadHtmlModal } from "@/components/website/lead-html-modal";
@@ -356,6 +357,7 @@ export function WorkContentTab({
           total={sections.length}
           color={colorClass(index)}
           workId={work.id}
+          work={work}
           uploadRoot={workFolderPrefix(work.slug, work.id)}
           siteUrl={siteUrl}
           open={openIds.has(section.id)}
@@ -419,6 +421,7 @@ function SectionCard({
   total,
   color,
   workId,
+  work,
   uploadRoot,
   siteUrl,
   open,
@@ -438,6 +441,7 @@ function SectionCard({
   total: number;
   color: string;
   workId: string;
+  work: WorkDetail;
   uploadRoot: string;
   siteUrl: string;
   open: boolean;
@@ -511,6 +515,7 @@ function SectionCard({
             sectionIndex={sectionIndex}
             sections={sections}
             workId={workId}
+            work={work}
             uploadRoot={uploadRoot}
             siteUrl={siteUrl}
             isInterview={isInterview}
@@ -532,6 +537,7 @@ function SectionBody({
   sectionIndex,
   sections,
   workId,
+  work,
   uploadRoot,
   siteUrl,
   isInterview,
@@ -546,6 +552,7 @@ function SectionBody({
   sectionIndex: number;
   sections: WorkSection[];
   workId: string;
+  work: WorkDetail;
   uploadRoot: string;
   siteUrl: string;
   isInterview: boolean;
@@ -556,6 +563,15 @@ function SectionBody({
   onMoveBlock: (blockIndex: number, dir: -1 | 1) => void;
   onReload: () => Promise<void>;
 }) {
+  const altContext: AltSuggestContext = {
+    kind: "work",
+    titleKo: work.title?.ko || work.title?.en || null,
+    titleEn: work.title?.en || null,
+    category: null,
+    locationCity: work.location_city?.en || work.location_city?.ko || null,
+    locationCountry: work.location_country?.en || work.location_country?.ko || null,
+    sectionTitle: sectionTitle(section)
+  };
   const [headline, setHeadline] = useState<Loc>(asLoc(section.headline));
   const [lead, setLead] = useState<Loc>(asLoc(section.lead));
   const [error, setError] = useState<string | null>(null);
@@ -702,6 +718,7 @@ function SectionBody({
               workId={workId}
               uploadRoot={uploadRoot}
               siteUrl={siteUrl}
+              altContext={altContext}
               collapsed={!openBlockIds.has(block.id)}
               canMoveUp={canMoveUp}
               canMoveDown={canMoveDown}

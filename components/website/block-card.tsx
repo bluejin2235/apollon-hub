@@ -33,8 +33,23 @@ import { ConfirmDialog } from "@/components/website/confirm-dialog";
 import { PartialSaveBtn, AutoSaveLabel, type PartialSaveState } from "@/components/website/partial-save-btn";
 import { AUTO_PARTIAL_SAVE_DEBOUNCE_MS } from "@/components/website/use-auto-partial-save";
 import { ImageUploader, type UploadedMedia } from "@/components/website/image-uploader";
+import { AltSuggestStatusLine, confirmOverwriteAlt } from "@/components/website/alt-suggest-ui";
 import { PosterPicker } from "@/components/website/poster-picker";
 import { uploadFile } from "@/lib/website/api";
+import {
+  requestAltSuggest,
+  resolveImageUrlForAlt,
+  shouldAutoFillAlt,
+  type AltSuggestStatus
+} from "@/lib/website/alt-suggest-client";
+import type { AltSuggestContext } from "@/lib/website/alt-suggest-types";
+import {
+  clearPendingAlt,
+  getPendingAlt,
+  setPendingAlt,
+  subscribePendingAlt
+} from "@/lib/website/alt-suggest-pending";
+import { isPlaceholderAlt } from "@/lib/website/placeholder-alt";
 import { describeBlockError } from "@/lib/website/block-error";
 import {
   sanitizeUploadFilename,
@@ -108,6 +123,7 @@ type Props = {
   workId: string;
   uploadRoot: string;
   siteUrl: string;
+  altContext?: AltSuggestContext | null;
   onReload: () => Promise<void>;
   onMove: (dir: -1 | 1) => void;
   canMoveUp?: boolean;
@@ -126,6 +142,7 @@ export function BlockCard({
   workId,
   uploadRoot,
   siteUrl,
+  altContext = null,
   onReload,
   onMove,
   canMoveUp = index > 1,
@@ -463,6 +480,21 @@ export function BlockCard({
       return;
     }
     await onReload();
+    if (!altContext) return;
+    for (const file of slice) {
+      const url = resolveImageUrlForAlt(siteUrl, file.src);
+      if (!url) {
+        setPendingAlt(file.src, "failed");
+        continue;
+      }
+      setPendingAlt(file.src, "loading");
+      void requestAltSuggest({
+        imageUrl: url,
+        context: { ...altContext, fileName: file.name }
+      }).then((result) => {
+        setPendingAlt(file.src, result ?? "failed");
+      });
+    }
   }
 
   return (
@@ -602,6 +634,7 @@ export function BlockCard({
               workId={workId}
               siteUrl={siteUrl}
               uploadRoot={uploadRoot}
+              altContext={altContext}
               atLimit={atLimit}
               limit={limit}
               onReload={onReload}
@@ -876,6 +909,7 @@ function ImagesEditor({
   workId,
   siteUrl,
   uploadRoot,
+  altContext,
   atLimit,
   limit,
   onReload,
@@ -889,6 +923,7 @@ function ImagesEditor({
   workId: string;
   siteUrl: string;
   uploadRoot: string;
+  altContext?: AltSuggestContext | null;
   atLimit: boolean;
   limit: number | null;
   onReload: () => Promise<void>;
@@ -952,6 +987,7 @@ function ImagesEditor({
             image={img}
             blockId={blockId}
             siteUrl={siteUrl}
+            altContext={altContext}
             canUp={i > 0}
             canDown={i < images.length - 1}
             onUp={() => void move(i, -1)}
@@ -1001,6 +1037,7 @@ function ImageRow({
   image,
   blockId,
   siteUrl,
+  altContext,
   canUp,
   canDown,
   onUp,
@@ -1012,6 +1049,7 @@ function ImageRow({
   image: BlockImage;
   blockId: string;
   siteUrl: string;
+  altContext?: AltSuggestContext | null;
   canUp: boolean;
   canDown: boolean;
   onUp: () => void;
@@ -1023,6 +1061,7 @@ function ImageRow({
   const [alt, setAlt] = useState<Loc>(asLoc(image.alt));
   const [caption, setCaption] = useState<Loc>(asLoc(image.caption));
   const [visible, setVisible] = useState(image.caption_visible);
+  const [altAi, setAltAi] = useState<AltSuggestStatus>("idle");
   const altRef = useRef(alt);
   const captionRef = useRef(caption);
   altRef.current = alt;
@@ -1044,6 +1083,32 @@ function ImageRow({
     setCaption(nextCaption);
     setVisible(image.caption_visible);
   }, [image]);
+
+  useEffect(() => {
+    function applyPending() {
+      const pending = getPendingAlt(image.src);
+      if (!pending) return;
+      if (pending === "loading") {
+        setAltAi("loading");
+        return;
+      }
+      if (pending === "failed") {
+        setAltAi("failed");
+        clearPendingAlt(image.src);
+        return;
+      }
+      if (!shouldAutoFillAlt(altRef.current.ko)) {
+        clearPendingAlt(image.src);
+        return;
+      }
+      altRef.current = pending;
+      setAlt(pending);
+      setAltAi("filled");
+      clearPendingAlt(image.src);
+    }
+    applyPending();
+    return subscribePendingAlt(applyPending);
+  }, [image.src]);
 
   useEffect(() => {
     textDup?.reportAlt(image.id, debouncedAlt);
@@ -1139,12 +1204,14 @@ function ImageRow({
             ko={alt.ko}
             en={alt.en}
             onKo={(v) => {
+              if (altAi !== "idle") setAltAi("idle");
               const next = locField(altRef.current, "ko", v);
               altRef.current = next;
               setAlt(next);
               schedule({ alt: next });
             }}
             onEn={(v) => {
+              if (altAi !== "idle") setAltAi("idle");
               const next = locField(altRef.current, "en", v);
               altRef.current = next;
               setAlt(next);
@@ -1165,6 +1232,33 @@ function ImageRow({
                 count={textDup?.altDup(debouncedAlt.en, "en") ?? 0}
               />
             }
+          />
+          <AltSuggestStatusLine
+            status={altAi}
+            canRewrite={Boolean(image.src?.trim()) && Boolean(altContext)}
+            onRewrite={() => {
+              void (async () => {
+                if (!altContext) return;
+                if (!confirmOverwriteAlt(!isPlaceholderAlt(altRef.current.ko))) return;
+                const url = resolveImageUrlForAlt(siteUrl, image.src);
+                if (!url) {
+                  setAltAi("failed");
+                  return;
+                }
+                setAltAi("loading");
+                const result = await requestAltSuggest({
+                  imageUrl: url,
+                  context: { ...altContext, fileName: fileName(image.src) }
+                });
+                if (!result) {
+                  setAltAi("failed");
+                  return;
+                }
+                altRef.current = result;
+                setAlt(result);
+                setAltAi("filled");
+              })();
+            }}
           />
         </div>
         <div>

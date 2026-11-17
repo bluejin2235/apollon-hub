@@ -11,6 +11,7 @@ import type { InsightBlock, InsightDetail, InsightSection } from "@/lib/website/
 import { workFolderPrefix } from "@/lib/website/upload-path";
 import { InsightBlockCard } from "@/components/website/insight-block-card";
 import { useFullSave } from "@/components/website/full-save-registry";
+import type { AltSuggestContext } from "@/lib/website/alt-suggest-types";
 import { InsightBlockPicker } from "@/components/website/insight-block-picker";
 import { GuideTermProvider } from "@/components/website/ui/GuideTerm";
 import { showToast } from "@/components/website/toast";
@@ -146,7 +147,17 @@ export function InsightContentTab({
         {error ? <p className="mb-3 text-[13px] text-rose-600">{error}</p> : null}
 
         <div className="blks insight-blks">
-          {allBlocks.map((entry, i) => (
+          {allBlocks.map((entry, i) => {
+            const altContext: AltSuggestContext = {
+              kind: "insight",
+              titleKo: insight.title?.ko ?? null,
+              titleEn: insight.title?.en ?? null,
+              category: null,
+              locationCity: null,
+              locationCountry: null,
+              sectionTitle: null
+            };
+            return (
             <InsightBlockCard
               key={entry.block.id}
               block={entry.block}
@@ -154,6 +165,7 @@ export function InsightContentTab({
               insightId={insight.id}
               uploadRoot={workFolderPrefix(insight.slug, insight.id)}
               siteUrl={siteUrl}
+              altContext={altContext}
               collapsed={!openBlockIds.has(entry.block.id)}
               canMoveUp={i > 0}
               canMoveDown={i < allBlocks.length - 1}
@@ -164,7 +176,8 @@ export function InsightContentTab({
               pressPerson={insight.press_person ?? ""}
               pressRole={insight.press_role ?? ""}
             />
-          ))}
+            );
+          })}
           <button
             type="button"
             className="addb"
