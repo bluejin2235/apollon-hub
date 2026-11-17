@@ -7,7 +7,12 @@ import {
   INSIGHT_PROBLEM_FLAGS,
   INSIGHT_WARN_FLAGS
 } from "@/lib/website/checks";
-import { isPlaceholderAlt, isShortAlt, isWeakEnglishAlt } from "@/lib/website/placeholder-alt";
+import {
+  isNumericOnlyAlt,
+  isPlaceholderAlt,
+  isShortAlt,
+  isWeakEnglishAlt
+} from "@/lib/website/placeholder-alt";
 import {
   KEY_ALT_REVIEW_EN_TITLE,
   KEY_ALT_REVIEW_EN_WHERE,
@@ -34,6 +39,7 @@ export type InsightCheckItem = {
     | (typeof INSIGHT_WARN_FLAGS)[number]
     | "weak_english_alt"
     | "short_alt"
+    | "numeric_alt"
     | "key_alt_review"
     | "key_alt_review_en";
   kind: InsightCheckItemKind;
@@ -151,16 +157,29 @@ export function countWeakInsightEnglishAlts(
   return n;
 }
 
-/** 국문 대체 텍스트가 한 글자인 칸 수 (대표 + 본문). 공개는 막지 않는다 */
-export function countShortInsightAlts(insight: InsightDetail, keyAltKo?: string | null): number {
+function countInsightKoAlts(
+  insight: InsightDetail,
+  keyAltKo: string | null | undefined,
+  test: (text: string) => boolean
+): number {
   let n = 0;
-  if (isShortAlt(keyAltKo ?? asLoc(insight.key_image_alt).ko)) n += 1;
+  if (test(keyAltKo ?? asLoc(insight.key_image_alt).ko)) n += 1;
   for (const block of orderedInsightBlocks(insight)) {
     for (const image of block.insight_images ?? []) {
-      if (isShortAlt(asLoc(image.alt).ko)) n += 1;
+      if (test(asLoc(image.alt).ko)) n += 1;
     }
   }
   return n;
+}
+
+/** 국문 대체 텍스트가 한 글자인 칸 수 (대표 + 본문). 공개는 막지 않는다 */
+export function countShortInsightAlts(insight: InsightDetail, keyAltKo?: string | null): number {
+  return countInsightKoAlts(insight, keyAltKo, isShortAlt);
+}
+
+/** 국문 대체 텍스트가 숫자만인 칸 수 (「1987」 등, 대표 + 본문). 공개는 막지 않는다 */
+export function countNumericInsightAlts(insight: InsightDetail, keyAltKo?: string | null): number {
+  return countInsightKoAlts(insight, keyAltKo, isNumericOnlyAlt);
 }
 
 function whereLine(tab: InsightEditorTab, detail: string) {
@@ -191,6 +210,7 @@ export function buildInsightCheckItems(
   const keyAltKo = opts?.keyAltKo ?? asLoc(insight.key_image_alt).ko;
   const weakEnCount = countWeakInsightEnglishAlts(insight, opts?.keyAltEn);
   const shortAltCount = countShortInsightAlts(insight, keyAltKo);
+  const numericAltCount = countNumericInsightAlts(insight, keyAltKo);
   const all: InsightCheckItem[] = [
     ...INSIGHT_PROBLEM_FLAGS.map((flag) => {
       let title = INSIGHT_CHECK_LABEL[flag];
@@ -281,6 +301,17 @@ export function buildInsightCheckItems(
       focusId: "insight-field-key-alt"
     },
     {
+      flag: "numeric_alt" as const,
+      kind: "warn" as const,
+      tab: "basic" as const,
+      title: `대체 텍스트가 숫자만입니다 ${numericAltCount}건`,
+      where: whereLine(
+        "basic",
+        "작품명이나 사진 속 숫자가 맞는지 확인해 주세요. 무엇인지 한 문장으로 쓰면 더 좋습니다. 그대로 공개할 수 있습니다"
+      ),
+      focusId: "insight-field-key-alt"
+    },
+    {
       flag: "key_alt_review" as const,
       kind: "problem" as const,
       tab: "basic" as const,
@@ -313,6 +344,7 @@ export function buildInsightCheckItems(
     if (item.flag === "short_alt") {
       return shortAltCount > 0;
     }
+    if (item.flag === "numeric_alt") return numericAltCount > 0;
     if (item.flag === "key_alt_review") return Boolean(opts?.keyAltReview?.ko);
     if (item.flag === "key_alt_review_en") return Boolean(opts?.keyAltReview?.en);
     if (item.flag === "body_image_too_small") return smallBody.length > 0;

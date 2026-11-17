@@ -3,7 +3,12 @@
 import type { CheckWorks } from "@/lib/website/types";
 import { PROBLEM_FLAGS, WARN_FLAGS } from "@/lib/website/checks";
 import { PUBLISH_MSG_ALT, PUBLISH_MSG_SUMMARY } from "@/lib/website/api-fail-message";
-import { isPlaceholderAlt, isShortAlt, isWeakEnglishAlt } from "@/lib/website/placeholder-alt";
+import {
+  isNumericOnlyAlt,
+  isPlaceholderAlt,
+  isShortAlt,
+  isWeakEnglishAlt
+} from "@/lib/website/placeholder-alt";
 import { formatSmallBodyImageTitle, formatSmallBodyImageWhere } from "@/lib/website/spec";
 import {
   KEY_ALT_REVIEW_EN_TITLE,
@@ -30,6 +35,7 @@ export type WorkCheckItem = {
     | "missing_location_en"
     | "weak_english_alt"
     | "short_alt"
+    | "numeric_alt"
     | "key_alt_review"
     | "key_alt_review_en";
   kind: CheckItemKind;
@@ -96,19 +102,32 @@ export function countWeakWorkEnglishAlts(
   return n;
 }
 
-/** 국문 대체 텍스트가 한 글자인 칸 수 (대표 + 본문). 공개는 막지 않는다 */
-export function countShortWorkAlts(work: WorkDetail, keyAltKo?: string | null): number {
+function countWorkKoAlts(
+  work: WorkDetail,
+  keyAltKo: string | null | undefined,
+  test: (text: string) => boolean
+): number {
   let n = 0;
-  if (isShortAlt(keyAltKo ?? asLoc(work.key_image_alt).ko)) n += 1;
+  if (test(keyAltKo ?? asLoc(work.key_image_alt).ko)) n += 1;
   for (const section of work.work_sections ?? []) {
     if (section.kind === "interview") continue;
     for (const block of section.content_blocks ?? []) {
       for (const image of block.block_images ?? []) {
-        if (isShortAlt(asLoc(image.alt).ko)) n += 1;
+        if (test(asLoc(image.alt).ko)) n += 1;
       }
     }
   }
   return n;
+}
+
+/** 국문 대체 텍스트가 한 글자인 칸 수 (대표 + 본문). 공개는 막지 않는다 */
+export function countShortWorkAlts(work: WorkDetail, keyAltKo?: string | null): number {
+  return countWorkKoAlts(work, keyAltKo, isShortAlt);
+}
+
+/** 국문 대체 텍스트가 숫자만인 칸 수 (「1987」 등, 대표 + 본문). 공개는 막지 않는다 */
+export function countNumericWorkAlts(work: WorkDetail, keyAltKo?: string | null): number {
+  return countWorkKoAlts(work, keyAltKo, isNumericOnlyAlt);
 }
 
 /** 공개 전 점검 — 빠진 항목만. 플래그 집합은 바꾸지 않는다. */
@@ -139,6 +158,7 @@ export function buildWorkCheckItems(
   const missingBodyAlts = findMissingWorkImageAlts(work);
   const weakEnCount = countWeakWorkEnglishAlts(work, opts?.keyAltEn);
   const shortAltCount = countShortWorkAlts(work, opts?.keyAltKo);
+  const numericAltCount = countNumericWorkAlts(work, opts?.keyAltKo);
 
   const all: WorkCheckItem[] = [
     {
@@ -236,6 +256,17 @@ export function buildWorkCheckItems(
       tab: "basic",
       title: `대체 텍스트가 한 글자입니다 ${shortAltCount}건`,
       where: whereLine("basic", "무엇이 어디에 있는지 한 문장으로 쓰면 더 좋습니다. 그대로 공개할 수 있습니다"),
+      focusId: "work-field-key-alt"
+    },
+    {
+      flag: "numeric_alt" as const,
+      kind: "warn" as const,
+      tab: "basic" as const,
+      title: `대체 텍스트가 숫자만입니다 ${numericAltCount}건`,
+      where: whereLine(
+        "basic",
+        "작품명이나 사진 속 숫자가 맞는지 확인해 주세요. 무엇인지 한 문장으로 쓰면 더 좋습니다. 그대로 공개할 수 있습니다"
+      ),
       focusId: "work-field-key-alt"
     },
     {
@@ -359,6 +390,7 @@ export function buildWorkCheckItems(
     if (item.flag === "short_alt") {
       return shortAltCount > 0;
     }
+    if (item.flag === "numeric_alt") return numericAltCount > 0;
     if (item.flag === "key_alt_review") return Boolean(opts?.keyAltReview?.ko);
     if (item.flag === "key_alt_review_en") return Boolean(opts?.keyAltReview?.en);
     if (item.flag === "no_card_image") return !hasCard;

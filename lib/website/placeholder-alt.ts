@@ -25,6 +25,12 @@ const BANNED_EXACT = new Set([
 /** 숫자·문장 부호·기호·공백만 */
 const ONLY_NUM_OR_SYMBOL = /^[\p{N}\p{P}\p{S}\s]+$/u;
 
+/** 숫자 없이 문장 부호·기호·공백만 (「.」「-」「...」) */
+const ONLY_SYMBOL = /^[\p{P}\p{S}\s]+$/u;
+
+/** 숫자가 0 뿐 (「0」「00」「000」「0.0」) */
+const ONLY_ZERO = /^[0\p{P}\p{S}\s]+$/u;
+
 /** 카메라·메신저·화면 캡처 파일 이름 */
 const CAMERA_OR_CHAT_NAME =
   /^(IMG_\d+|DSC\d+|KakaoTalk_|스크린샷)/iu;
@@ -53,23 +59,34 @@ function looksLikeFilename(value: string): boolean {
 }
 
 /**
- * 공개를 막는 임시값: 빈칸 · 숫자·기호만 · 임시 낱말 · 파일 이름 꼴.
+ * 공개를 막는 임시값: 빈칸 · 기호만 · 0 만 · 임시 낱말 · 파일 이름 꼴.
+ * 「1987」「2024」처럼 0 이 아닌 숫자만인 값은 작품명·사진 속 숫자일 수 있어
+ * 막지 않고 isNumericOnlyAlt 로 경고만 한다.
  * 한 글자는 「꽃」「숲」처럼 정상 설명일 수 있어 막지 않고 isShortAlt 로 경고만 한다.
  */
 export function isPlaceholderAlt(text: string | null | undefined): boolean {
   const value = (text ?? "").trim();
   if (!value) return true;
-  if (ONLY_NUM_OR_SYMBOL.test(value)) return true;
+  if (ONLY_SYMBOL.test(value)) return true;
+  if (ONLY_ZERO.test(value)) return true;
   if (BANNED_EXACT.has(value.toLowerCase())) return true;
   if (TEMP_WORD_ONLY.test(value)) return true;
   if (looksLikeFilename(value)) return true;
   return false;
 }
 
-/** 한 글자 대체 텍스트 — 공개는 막지 않고 경고만 */
+/** 숫자(와 기호)만인 대체 텍스트 — 「1987」「2024」. 공개는 막지 않고 경고만 */
+export function isNumericOnlyAlt(text: string | null | undefined): boolean {
+  const value = (text ?? "").trim();
+  if (isPlaceholderAlt(value)) return false;
+  return ONLY_NUM_OR_SYMBOL.test(value);
+}
+
+/** 한 글자 대체 텍스트 — 공개는 막지 않고 경고만. 숫자 한 글자는 isNumericOnlyAlt 쪽 */
 export function isShortAlt(text: string | null | undefined): boolean {
   const value = (text ?? "").trim();
   if (isPlaceholderAlt(value)) return false;
+  if (isNumericOnlyAlt(value)) return false;
   return [...value].length === 1;
 }
 
@@ -80,11 +97,12 @@ export function hasHangulInText(text: string | null | undefined): boolean {
 
 /**
  * 영문 대체 텍스트 경고 대상.
- * 임시값·빈칸·한 글자이거나 한글이 들어가면 참. 공개는 막지 않는다.
+ * 임시값·빈칸·한 글자·숫자만이거나 한글이 들어가면 참. 공개는 막지 않는다.
  */
 export function isWeakEnglishAlt(text: string | null | undefined): boolean {
   const value = (text ?? "").trim();
   if (isPlaceholderAlt(value)) return true;
+  if (isNumericOnlyAlt(value)) return true;
   if (isShortAlt(value)) return true;
   return hasHangulInText(value);
 }

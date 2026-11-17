@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 
 import {
   hasHangulInText,
+  isNumericOnlyAlt,
   isPlaceholderAlt,
   isShortAlt,
   isWeakEnglishAlt
@@ -16,12 +17,28 @@ describe("isPlaceholderAlt", () => {
     assert.equal(isPlaceholderAlt("   "), true);
   });
 
-  it("숫자·기호만이면 참", () => {
+  it("0 만 · 기호만이면 참 (차단)", () => {
+    assert.equal(isPlaceholderAlt("0"), true);
     assert.equal(isPlaceholderAlt("00"), true);
-    assert.equal(isPlaceholderAlt("111"), true);
+    assert.equal(isPlaceholderAlt("000"), true);
+    assert.equal(isPlaceholderAlt(" 0.0 "), true);
     assert.equal(isPlaceholderAlt("-"), true);
+    assert.equal(isPlaceholderAlt("."), true);
     assert.equal(isPlaceholderAlt("..."), true);
-    assert.equal(isPlaceholderAlt("1-2"), true);
+    assert.equal(isPlaceholderAlt("#"), true);
+    assert.equal(isNumericOnlyAlt("0"), false);
+    assert.equal(isNumericOnlyAlt("."), false);
+  });
+
+  it("0 이 아닌 숫자만이면 거짓 — 차단 대신 숫자만 경고", () => {
+    for (const value of ["1987", "2024", "111", "1-2", "7", "10"]) {
+      assert.equal(isPlaceholderAlt(value), false, value);
+      assert.equal(isNumericOnlyAlt(value), true, value);
+      assert.equal(isShortAlt(value), false, value);
+    }
+    assert.equal(isNumericOnlyAlt("1987 서울 올림픽 기념 조형물"), false);
+    assert.equal(isNumericOnlyAlt("꽃"), false);
+    assert.equal(isNumericOnlyAlt(""), false);
   });
 
   it("한 글자는 거짓 (「꽃」「숲」 같은 정상 설명) — 경고 대상", () => {
@@ -30,9 +47,11 @@ describe("isPlaceholderAlt", () => {
     assert.equal(isShortAlt("꽃"), true);
     assert.equal(isShortAlt("숲"), true);
     assert.equal(isShortAlt("빛의 정원"), false);
-    // 한 글자라도 숫자·기호면 여전히 임시값 (경고가 아니라 차단)
-    assert.equal(isPlaceholderAlt("1"), true);
+    // 숫자 한 글자는 한 글자 경고가 아니라 숫자만 경고, 「0」은 차단
+    assert.equal(isPlaceholderAlt("1"), false);
     assert.equal(isShortAlt("1"), false);
+    assert.equal(isNumericOnlyAlt("1"), true);
+    assert.equal(isPlaceholderAlt("0"), true);
   });
 
   it("금지 낱말과 같으면 참 (대소문자·공백 무시)", () => {
@@ -102,6 +121,11 @@ describe("isWeakEnglishAlt", () => {
     assert.equal(isWeakEnglishAlt("00"), true);
     assert.equal(isWeakEnglishAlt(""), true);
     assert.equal(isWeakEnglishAlt("test"), true);
+  });
+
+  it("영문이 숫자만이면 경고 대상", () => {
+    assert.equal(isWeakEnglishAlt("1987"), true);
+    assert.equal(isWeakEnglishAlt("2024"), true);
   });
 
   it("영문 칸에 한글이 있으면 참", () => {
