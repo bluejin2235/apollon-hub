@@ -50,7 +50,7 @@ function TargetKeywords() {
           <h2>
             목표 키워드 <PrepBadge />
           </h2>
-          <p className="v3-card-sub">먼저 지켜볼 12개 · 실제 목록은 20~30개로 정합니다</p>
+          <p className="v3-card-sub">확정한 30개 · 국문 21 · 영문 9</p>
         </div>
       </div>
       <div className="v3-table-wrap">

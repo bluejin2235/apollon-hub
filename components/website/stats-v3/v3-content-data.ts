@@ -238,7 +238,12 @@ export function titlesOf(catalog: V3Catalog | null): TitleMap {
   return catalog ? buildTitles(catalog.works, catalog.insights) : EMPTY_TITLES;
 }
 
-/** 표 전체 — 조회 많은 순(buildPages 순서) */
+/** 공개 전 미리보기 주소(/preview/…, 영문 /en/preview/…) — 방문자가 보는 화면이 아니라 표에서 뺀다 */
+export function isPreviewPath(path: string): boolean {
+  return /^(\/en)?\/preview(\/|$)/i.test(path);
+}
+
+/** 표 전체 — 조회 많은 순(buildPages 순서). 미리보기 주소는 뺀다 */
 export function contentRows(
   bundle: StatsBundle | null,
   catalog: V3Catalog | null,
@@ -249,21 +254,23 @@ export function contentRows(
   const fresh = newArticleSlugs(catalog, range?.actualFrom ?? from, range?.actualTo ?? to);
   const previous = prevGuard(bundle)(buildPreviousPages(bundle));
   const sources = sourceShares(bundle);
-  return buildPages(bundle, titlesOf(catalog)).map((page) => {
-    const slug = slugOf(page.path);
-    return {
-      path: page.path,
-      title: page.title,
-      kind: contentKindOf(page),
-      locale: page.locale,
-      views: page.views,
-      entries: page.entries,
-      bounce: page.bounce,
-      sources: sources.get(page.path) ?? null,
-      delta: pageDelta(page, previous),
-      isNew: slug ? fresh[slug.kind].has(slug.slug) : false
-    };
-  });
+  return buildPages(bundle, titlesOf(catalog))
+    .filter((page) => !isPreviewPath(page.path))
+    .map((page) => {
+      const slug = slugOf(page.path);
+      return {
+        path: page.path,
+        title: page.title,
+        kind: contentKindOf(page),
+        locale: page.locale,
+        views: page.views,
+        entries: page.entries,
+        bounce: page.bounce,
+        sources: sources.get(page.path) ?? null,
+        delta: pageDelta(page, previous),
+        isNew: slug ? fresh[slug.kind].has(slug.slug) : false
+      };
+    });
 }
 
 /* ─────────────────────── 거르기 · 순서 ─────────────────────── */

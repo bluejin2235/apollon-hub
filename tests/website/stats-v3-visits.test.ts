@@ -161,8 +161,23 @@ describe("v3 방문 패턴 목록 · 막대 · 성과", () => {
     assert.equal(map.get("click")?.value, 3);
     assert.equal(map.get("lead")?.value, 1);
     assert.equal(map.get("newsletter")?.value, 2);
-    assert.equal(map.get("talent")?.value, 0);
+    // 지금·앞 기간 어디에도 없는 이벤트 = 아직 모으지 않음 → 「—」(null), 0 이 아님
+    assert.equal(map.get("talent")?.value, null);
     assert.equal(map.get("talent")?.delta.delta, null);
+  });
+
+  it("성과 — 앞 기간에는 있었고 이번엔 없으면 실제 0", () => {
+    const base = bundleOf();
+    const event = (base as unknown as Record<string, { previous: StatsPoint[] }>).event;
+    const bundle = {
+      ...base,
+      event: {
+        ...event,
+        previous: [...event.previous, ga("event", "2026-11-10", { key: "talent_signup", events: 4 })]
+      }
+    } as unknown as StatsBundle;
+    const map = new Map(outcomes(bundle).map((item) => [item.id, item]));
+    assert.equal(map.get("talent")?.value, 0);
   });
 
   it("답 문장", () => {

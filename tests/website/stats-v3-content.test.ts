@@ -9,6 +9,7 @@ import {
   contentMoves,
   contentRows,
   filterAndSort,
+  isPreviewPath,
   pageDaySeries,
   roundShares,
   sourceShares
@@ -129,6 +130,28 @@ describe("v3 콘텐츠 표", () => {
     assert.equal(contentKindOf({ typeId: "insight" }), "인사이트");
     assert.equal(contentKindOf({ typeId: "home" }), "메뉴 페이지");
     assert.equal(contentKindOf({ typeId: "about" }), "메뉴 페이지");
+  });
+
+  it("미리보기 주소(/preview/…)는 표에서 뺀다", () => {
+    const base = bundleOf();
+    const page = (base as unknown as Record<string, { current: StatsPoint[] }>).page;
+    const withPreview = {
+      ...base,
+      page: {
+        ...page,
+        current: [
+          ...page.current,
+          ga("page", "2026-11-12", { key: "/preview/works/draft", views: 99 }),
+          ga("page", "2026-11-12", { key: "/en/preview/insight/draft", views: 9 })
+        ]
+      }
+    } as unknown as StatsBundle;
+    const paths = contentRows(withPreview, catalog, "2026-11-12", "2026-11-13").map((row) => row.path);
+    assert.equal(paths.some((path) => path.includes("/preview")), false);
+    assert.ok(paths.includes("/works/a"));
+    assert.equal(isPreviewPath("/preview/works/x"), true);
+    assert.equal(isPreviewPath("/en/preview/x"), true);
+    assert.equal(isPreviewPath("/works/preview-wall"), false);
   });
 
   it("제목 · 국영 · 새 글(기간 안 공개)", () => {

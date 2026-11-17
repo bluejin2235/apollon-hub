@@ -224,6 +224,13 @@ function eventCount(bundle: StatsBundle | null, name: string, when: When): numbe
   return sumField(rows.filter((row) => row.key === name), "events") ?? 0;
 }
 
+/** 지금·앞 기간 어디에도 그 이벤트가 한 번도 없으면 아직 모으지 않은 것 — 0 이 아니라 「—」 */
+function eventSeen(bundle: StatsBundle | null, name: string): boolean {
+  return (["current", "previous"] as const).some((when) =>
+    ga4(bundle, "event", when).some((row) => row.key === name)
+  );
+}
+
 /** 문의하기 누름 = lets_talk_click 만. 문의 접수 = generate_lead (요약 카드 아래 줄과 같은 값) */
 export function outcomes(bundle: StatsBundle | null): Outcome[] {
   const prev = prevGuard(bundle);
@@ -234,10 +241,13 @@ export function outcomes(bundle: StatsBundle | null): Outcome[] {
       previous: prev(typeof value?.previous === "number" ? value.previous : null)
     };
   };
-  const event = (name: string) => ({
-    current: eventCount(bundle, name, "current"),
-    previous: prev(eventCount(bundle, name, "previous"))
-  });
+  const event = (name: string) => {
+    if (!eventSeen(bundle, name)) return { current: null, previous: null };
+    return {
+      current: eventCount(bundle, name, "current"),
+      previous: prev(eventCount(bundle, name, "previous"))
+    };
+  };
   const make = (pair: { current: number | null; previous: number | null }, unit: string): Pick<Outcome, "value" | "delta" | "unit"> => ({
     value: pair.current,
     unit,
