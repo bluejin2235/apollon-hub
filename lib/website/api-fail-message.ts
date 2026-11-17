@@ -1,5 +1,7 @@
 /** DB / API 실패를 사람이 읽는 말로 바꿉니다. 원문 code·JSON 은 노출하지 않습니다. */
 
+import { isPlaceholderAlt } from "@/lib/website/placeholder-alt";
+
 export type ApiFailContext = {
   /** 한 줄 요약 국문 — 비었는지 판단 */
   summaryKo?: string | null;
@@ -31,7 +33,7 @@ function publishReadyMessage(ctx?: ApiFailContext): string {
   const missing: string[] = [];
   if (ctx) {
     if (!ctx.summaryKo?.trim()) missing.push(MSG_SUMMARY);
-    if (!ctx.keyAltKo?.trim()) missing.push(MSG_ALT);
+    if (isPlaceholderAlt(ctx.keyAltKo)) missing.push(MSG_ALT);
   }
   if (missing.length > 0) return missing.join(" · ");
   // 국문은 있는데도 제약이 막으면(예: 예전 영문 필수) 뭉뚱그리지 않고 안내
@@ -159,7 +161,7 @@ function publishBlockedFromDetails(details: unknown, ctx?: ApiFailContext): stri
   if (parts.length > 0) return parts.join(" · ");
 
   // 플래그만 있고 요약/알트가 실제로 비었으면 국문 기준으로
-  if (ctx && (!ctx.summaryKo?.trim() || !ctx.keyAltKo?.trim())) {
+  if (ctx && (!ctx.summaryKo?.trim() || isPlaceholderAlt(ctx.keyAltKo))) {
     return publishReadyMessage(ctx);
   }
   return null;

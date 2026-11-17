@@ -7,6 +7,7 @@ import {
   INSIGHT_PROBLEM_FLAGS,
   INSIGHT_WARN_FLAGS
 } from "@/lib/website/checks";
+import { isPlaceholderAlt, isWeakEnglishAlt } from "@/lib/website/placeholder-alt";
 import {
   formatSmallBodyImageTitle,
   formatSmallBodyImageWhere
@@ -22,7 +23,10 @@ import { asLoc } from "@/lib/website/work-detail";
 export type InsightCheckItemKind = "problem" | "warn";
 
 export type InsightCheckItem = {
-  flag: (typeof INSIGHT_PROBLEM_FLAGS)[number] | (typeof INSIGHT_WARN_FLAGS)[number];
+  flag:
+    | (typeof INSIGHT_PROBLEM_FLAGS)[number]
+    | (typeof INSIGHT_WARN_FLAGS)[number]
+    | "weak_english_alt";
   kind: InsightCheckItemKind;
   tab: InsightEditorTab;
   title: string;
@@ -39,7 +43,11 @@ const TAB_NAME: Record<InsightEditorTab, string> = {
   history: "이력"
 };
 
-const FLAG_TAB: Record<InsightCheckItem["flag"], InsightEditorTab> = {
+type InsightServerFlag =
+  | (typeof INSIGHT_PROBLEM_FLAGS)[number]
+  | (typeof INSIGHT_WARN_FLAGS)[number];
+
+const FLAG_TAB: Record<InsightServerFlag, InsightEditorTab> = {
   missing_summary_en: "basic",
   missing_key_alt: "basic",
   no_key_image: "basic",
@@ -57,7 +65,7 @@ const FLAG_TAB: Record<InsightCheckItem["flag"], InsightEditorTab> = {
   no_related: "related"
 };
 
-const FLAG_SUB: Record<InsightCheckItem["flag"], string> = {
+const FLAG_SUB: Record<InsightServerFlag, string> = {
   missing_summary_en: "검색과 AI 가 이 글을 읽습니다",
   missing_key_alt: "이미지를 못 보는 사람과 AI 가 읽습니다",
   no_key_image: "목록 카드·링크 공유에 쓰는 대표 이미지를 올려 주세요.",
@@ -82,8 +90,7 @@ export type MissingImageAltSpot = {
   label: string;
 };
 
-/** 국문 대체 텍스트가 비어 있는 본문 이미지 위치 */
-export function findMissingInsightImageAlts(insight: InsightDetail): MissingImageAltSpot[] {
+function orderedInsightBlocks(insight: InsightDetail) {
   const sections = [...(insight.insight_sections ?? [])].sort((a, b) => a.sort - b.sort);
   const sectionIds = new Set(sections.map((s) => s.id));
   const blocks = [...(insight.insight_blocks ?? [])].sort((a, b) => a.sort - b.sort);
@@ -91,20 +98,23 @@ export function findMissingInsightImageAlts(insight: InsightDetail): MissingImag
     ...sections.flatMap((section) => blocks.filter((b) => b.section_id === section.id)),
     ...blocks.filter((b) => !b.section_id || !sectionIds.has(b.section_id))
   ];
-  // 중복 제거 (section 없는 블록이 두 번 잡히지 않게)
   const seen = new Set<string>();
-  const unique = ordered.filter((b) => {
+  return ordered.filter((b) => {
     if (seen.has(b.id)) return false;
     seen.add(b.id);
     return true;
   });
+}
 
+/** 국문 대체 텍스트가 없거나 의미 없는 본문 이미지 위치 */
+export function findMissingInsightImageAlts(insight: InsightDetail): MissingImageAltSpot[] {
+  const unique = orderedInsightBlocks(insight);
   const spots: MissingImageAltSpot[] = [];
   unique.forEach((block, blockIndex) => {
     const images = [...(block.insight_images ?? [])].sort((a, b) => a.sort - b.sort);
     images.forEach((image, imageIndex) => {
       const alt = asLoc(image.alt);
-      if (alt.ko.trim()) return;
+      if (!isPlaceholderAlt(alt.ko)) return;
       spots.push({
         blockId: block.id,
         blockIndex: blockIndex + 1,
@@ -116,11 +126,27 @@ export function findMissingInsightImageAlts(insight: InsightDetail): MissingImag
   return spots;
 }
 
+/** 영문 대체 텍스트가 비었거나 임시·한글인 칸 수 (대표 + 본문) */
+export function countWeakInsightEnglishAlts(
+  insight: InsightDetail,
+  keyAltEn?: string | null
+): number {
+  let n = 0;
+  const keyEn = keyAltEn ?? asLoc(insight.key_image_alt).en;
+  if (isWeakEnglishAlt(keyEn)) n += 1;
+  for (const block of orderedInsightBlocks(insight)) {
+    for (const image of block.insight_images ?? []) {
+      if (isWeakEnglishAlt(asLoc(image.alt).en)) n += 1;
+    }
+  }
+  return n;
+}
+
 function whereLine(tab: InsightEditorTab, detail: string) {
   return `${TAB_NAME[tab]} · ${detail}`;
 }
 
-function flagOn(check: CheckInsights, flag: InsightCheckItem["flag"]): boolean {
+function flagOn(check: CheckInsights, flag: InsightServerFlag): boolean {
   const value = check[flag];
   if (flag === "empty_blocks") return Number(value) > 0;
   return Boolean(value);
@@ -129,13 +155,14 @@ function flagOn(check: CheckInsights, flag: InsightCheckItem["flag"]): boolean {
 export function buildInsightCheckItems(
   insight: InsightDetail,
   check: CheckInsights,
-  opts?: { summaryKo?: string | null; keyAltKo?: string | null }
+  opts?: { summaryKo?: string | null; keyAltKo?: string | null; keyAltEn?: string | null }
 ): InsightCheckItem[] {
   const aiCount = countInsightAiUnconfirmed(insight);
   const missingAlts = findMissingInsightImageAlts(insight);
   const smallBody = listSmallInsightBodyImages(insight);
   const summaryKo = opts?.summaryKo ?? asLoc(insight.summary).ko;
   const keyAltKo = opts?.keyAltKo ?? asLoc(insight.key_image_alt).ko;
+  const weakEnCount = countWeakInsightEnglishAlts(insight, opts?.keyAltEn);
   const all: InsightCheckItem[] = [
     ...INSIGHT_PROBLEM_FLAGS.map((flag) => {
       let title = INSIGHT_CHECK_LABEL[flag];
@@ -205,14 +232,31 @@ export function buildInsightCheckItems(
         where,
         blockId
       };
-    })
+    }),
+    {
+      flag: "weak_english_alt" as const,
+      kind: "warn" as const,
+      tab: "basic" as const,
+      title: `영문 대체 텍스트 없음 ${weakEnCount}건`,
+      where: whereLine(
+        "basic",
+        "영문을 채우거나, 영문 칸에 한글이 들어가지 않게 고쳐 주세요. 비어 있어도 공개할 수 있습니다"
+      ),
+      focusId: "insight-field-key-alt"
+    }
   ];
   return all.filter((item) => {
     if (item.flag === "missing_summary_en") {
       return !summaryKo.trim();
     }
     if (item.flag === "missing_key_alt") {
-      return !keyAltKo.trim();
+      return isPlaceholderAlt(keyAltKo);
+    }
+    if (item.flag === "missing_image_alt") {
+      return missingAlts.length > 0 || flagOn(check, "missing_image_alt");
+    }
+    if (item.flag === "weak_english_alt") {
+      return weakEnCount > 0;
     }
     if (item.flag === "body_image_too_small") return smallBody.length > 0;
     return flagOn(check, item.flag);

@@ -20,6 +20,7 @@ import {
   INSIGHT_CHECK_LABEL,
   INSIGHT_PROBLEM_FLAGS
 } from "@/lib/website/checks";
+import { isPlaceholderAlt } from "@/lib/website/placeholder-alt";
 import { fallbackChangeNote, firstPublishNote, skipPublishCheck } from "@/lib/website/publish";
 import type { CheckInsights, WebsiteCategory, WorkSiteVisibility } from "@/lib/website/types";
 import {
@@ -97,10 +98,18 @@ function dotClass(state: "ok" | "warn" | "empty") {
 
 function tabDot(tab: InsightEditorTab, check: CheckInsights | null, insight?: InsightDetail | null): "ok" | "warn" | "empty" {
   if (tab === "basic") {
-    if (!asLoc(insight?.summary).ko.trim() || !asLoc(insight?.key_image_alt).ko.trim()) return "warn";
+    if (
+      !asLoc(insight?.summary).ko.trim() ||
+      isPlaceholderAlt(asLoc(insight?.key_image_alt).ko)
+    ) {
+      return "warn";
+    }
     return fillInsightBasic(check);
   }
-  if (tab === "content") return fillInsightBody(check);
+  if (tab === "content") {
+    if (insight && findMissingInsightImageAlts(insight).length > 0) return "warn";
+    return fillInsightBody(check);
+  }
   if (tab === "related") return fillInsightRelated(check);
   return "ok";
 }
@@ -112,12 +121,22 @@ function problemCount(
 ): number {
   if (!check) return INSIGHT_PROBLEM_FLAGS.length;
   let n = INSIGHT_PROBLEM_FLAGS.filter(
-    (flag) => flag !== "missing_summary_en" && flag !== "missing_key_alt" && Boolean(check[flag])
+    (flag) =>
+      flag !== "missing_summary_en" &&
+      flag !== "missing_key_alt" &&
+      flag !== "missing_image_alt" &&
+      Boolean(check[flag])
   ).length;
   const summaryKo = draft?.summary.ko ?? asLoc(insight?.summary).ko;
   const altKo = draft?.key_image_alt.ko ?? asLoc(insight?.key_image_alt).ko;
   if (!summaryKo.trim()) n += 1;
-  if (!altKo.trim()) n += 1;
+  if (isPlaceholderAlt(altKo)) n += 1;
+  if (
+    insight &&
+    (findMissingInsightImageAlts(insight).length > 0 || Boolean(check.missing_image_alt))
+  ) {
+    n += 1;
+  }
   return n;
 }
 
@@ -278,7 +297,8 @@ function InsightEditorInner({ insightId, siteUrl }: { insightId: string; siteUrl
     insight && check
       ? buildInsightCheckItems(insight, check, {
           summaryKo: draft?.summary.ko,
-          keyAltKo: draft?.key_image_alt.ko
+          keyAltKo: draft?.key_image_alt.ko,
+          keyAltEn: draft?.key_image_alt.en
         })
       : [];
   const problemItems = checkItems.filter((item) => item.kind === "problem");

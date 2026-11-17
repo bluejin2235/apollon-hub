@@ -3,11 +3,12 @@
 import type { CheckWorks } from "@/lib/website/types";
 import { PROBLEM_FLAGS, WARN_FLAGS } from "@/lib/website/checks";
 import { PUBLISH_MSG_ALT, PUBLISH_MSG_SUMMARY } from "@/lib/website/api-fail-message";
+import { isPlaceholderAlt, isWeakEnglishAlt } from "@/lib/website/placeholder-alt";
 import { formatSmallBodyImageTitle, formatSmallBodyImageWhere } from "@/lib/website/spec";
 import { isLongEdgeTooSmall } from "@/lib/website/image-long-edge";
 import { listSmallWorkBodyImages } from "@/lib/website/small-body-image";
 import type { EditorTab, WorkDetail } from "@/lib/website/work-detail";
-import { aiUnconfirmedBySection, countAiUnconfirmed } from "@/lib/website/work-detail";
+import { aiUnconfirmedBySection, asLoc, countAiUnconfirmed } from "@/lib/website/work-detail";
 
 export type CheckItemKind = "problem" | "warn";
 
@@ -20,7 +21,8 @@ export type WorkCheckItem = {
     | "creator_words_empty"
     | "creator_words_missing_ko"
     | "creator_words_missing_en"
-    | "missing_location_en";
+    | "missing_location_en"
+    | "weak_english_alt";
   kind: CheckItemKind;
   tab: EditorTab;
   title: string;
@@ -44,6 +46,47 @@ function whereLine(tab: EditorTab, detail: string) {
   return `${TAB_NAME[tab]} · ${detail}`;
 }
 
+/** 국문 대체 텍스트가 없거나 의미 없는 본문 이미지 */
+export function findMissingWorkImageAlts(work: WorkDetail): { count: number; blockId?: string } {
+  let count = 0;
+  let blockId: string | undefined;
+  const sections = [...(work.work_sections ?? [])]
+    .filter((section) => section.kind !== "interview")
+    .sort((a, b) => a.sort - b.sort);
+  for (const section of sections) {
+    const blocks = [...(section.content_blocks ?? [])].sort((a, b) => a.sort - b.sort);
+    for (const block of blocks) {
+      for (const image of block.block_images ?? []) {
+        if (!isPlaceholderAlt(asLoc(image.alt).ko)) continue;
+        count += 1;
+        if (!blockId) blockId = block.id;
+      }
+    }
+  }
+  return { count, blockId };
+}
+
+/** 영문 대체 텍스트가 비었거나 임시·한글인 칸 수 (대표 + 본문) */
+export function countWeakWorkEnglishAlts(
+  work: WorkDetail,
+  keyAltEn?: string | null
+): number {
+  let n = 0;
+  const keyEn = keyAltEn ?? asLoc(work.key_image_alt).en;
+  if (isWeakEnglishAlt(keyEn)) n += 1;
+  const sections = [...(work.work_sections ?? [])]
+    .filter((section) => section.kind !== "interview")
+    .sort((a, b) => a.sort - b.sort);
+  for (const section of sections) {
+    for (const block of section.content_blocks ?? []) {
+      for (const image of block.block_images ?? []) {
+        if (isWeakEnglishAlt(asLoc(image.alt).en)) n += 1;
+      }
+    }
+  }
+  return n;
+}
+
 /** 공개 전 점검 — 빠진 항목만. 플래그 집합은 바꾸지 않는다. */
 export function buildWorkCheckItems(
   work: WorkDetail,
@@ -52,6 +95,7 @@ export function buildWorkCheckItems(
     hasCardImage?: boolean;
     summaryKo?: string | null;
     keyAltKo?: string | null;
+    keyAltEn?: string | null;
     locationEn?: string | null;
   }
 ): WorkCheckItem[] {
@@ -66,6 +110,8 @@ export function buildWorkCheckItems(
   const summaryKo = opts?.summaryKo ?? work.summary?.ko ?? "";
   const keyAltKo = opts?.keyAltKo ?? work.key_image_alt?.ko ?? "";
   const locationEn = opts?.locationEn ?? work.location_en ?? "";
+  const missingBodyAlts = findMissingWorkImageAlts(work);
+  const weakEnCount = countWeakWorkEnglishAlts(work, opts?.keyAltEn);
 
   const all: WorkCheckItem[] = [
     {
@@ -123,8 +169,23 @@ export function buildWorkCheckItems(
       flag: "missing_image_alt",
       kind: "problem",
       tab: "content",
-      title: "본문 이미지에 대체 텍스트가 없습니다",
-      where: whereLine("content", "대체 텍스트를 채워 주세요. 화면에 안 보입니다")
+      title:
+        missingBodyAlts.count > 1
+          ? `본문 이미지에 대체 텍스트가 없습니다 · ${missingBodyAlts.count}곳`
+          : "본문 이미지에 대체 텍스트가 없습니다",
+      where: whereLine("content", "대체 텍스트를 채워 주세요. 화면에 안 보입니다"),
+      blockId: missingBodyAlts.blockId
+    },
+    {
+      flag: "weak_english_alt",
+      kind: "warn",
+      tab: "basic",
+      title: `영문 대체 텍스트 없음 ${weakEnCount}건`,
+      where: whereLine(
+        "basic",
+        "영문을 채우거나, 영문 칸에 한글이 들어가지 않게 고쳐 주세요. 비어 있어도 공개할 수 있습니다"
+      ),
+      focusId: "work-field-key-alt"
     },
     {
       flag: "ai_unconfirmed",
@@ -236,7 +297,13 @@ export function buildWorkCheckItems(
       return !summaryKo.trim();
     }
     if (item.flag === "missing_key_alt") {
-      return !keyAltKo.trim();
+      return isPlaceholderAlt(keyAltKo);
+    }
+    if (item.flag === "missing_image_alt") {
+      return missingBodyAlts.count > 0 || Boolean(check.missing_image_alt);
+    }
+    if (item.flag === "weak_english_alt") {
+      return weakEnCount > 0;
     }
     if (item.flag === "no_card_image") return !hasCard;
     if (item.flag === "key_image_too_small") return keyTooSmall;

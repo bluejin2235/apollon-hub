@@ -6,6 +6,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { getMeta, getWork, publishWork, publishWorkPreview, setWorkCategories, unhideWork, updateWork, generatePublishNote } from "@/lib/website/api";
 import { apiFailMessage } from "@/lib/website/api-fail-message";
 import { fillBasic, fillBody, fillFaq, fillRelated, PROBLEM_FLAGS } from "@/lib/website/checks";
+import { isPlaceholderAlt } from "@/lib/website/placeholder-alt";
 import { applyTextDupChecks } from "@/lib/website/text-dup";
 import { fallbackChangeNote, firstPublishNote, skipPublishCheck } from "@/lib/website/publish";
 import type { WorkSiteVisibility } from "@/lib/website/types";
@@ -27,6 +28,7 @@ import {
 import {
   WorkPublishCheckList,
   buildWorkCheckItems,
+  findMissingWorkImageAlts,
   type WorkCheckItem
 } from "@/components/website/publish-check-panel";
 import { buildVideoBlockCheckItems, findVideoBlockGaps } from "@/lib/website/video-block-check";
@@ -90,11 +92,19 @@ function dotClass(state: "ok" | "warn" | "empty") {
 
 function tabDot(tab: EditorTab, check: CheckWorks | null, work: WorkDetail | null): "ok" | "warn" | "empty" {
   if (tab === "basic") {
-    if (!work?.summary?.ko?.trim() || !work?.key_image_alt?.ko?.trim()) return "warn";
+    if (
+      !work?.summary?.ko?.trim() ||
+      isPlaceholderAlt(work?.key_image_alt?.ko)
+    ) {
+      return "warn";
+    }
     if (!work.location_en?.trim()) return "warn";
     return fillBasic(check);
   }
-  if (tab === "content") return fillBody(check);
+  if (tab === "content") {
+    if (work && findMissingWorkImageAlts(work).count > 0) return "warn";
+    return fillBody(check);
+  }
   if (tab === "interview") {
     if (!work || !interviewSectionOf(work)) return "empty";
     if (creatorWordsBlockPublish(work)) return "warn";
@@ -122,6 +132,7 @@ function problemCount(
       flag !== "no_card_image" &&
       flag !== "missing_summary_en" &&
       flag !== "missing_key_alt" &&
+      flag !== "missing_image_alt" &&
       check[flag]
   ).length;
   const hasCard = Boolean(work?.card_image?.trim() || draft?.card_image?.trim());
@@ -129,7 +140,8 @@ function problemCount(
   const summaryKo = draft?.summary.ko ?? work?.summary?.ko ?? "";
   const altKo = draft?.key_image_alt.ko ?? work?.key_image_alt?.ko ?? "";
   if (!summaryKo.trim()) n += 1;
-  if (!altKo.trim()) n += 1;
+  if (isPlaceholderAlt(altKo)) n += 1;
+  if (work && (findMissingWorkImageAlts(work).count > 0 || check.missing_image_alt)) n += 1;
   if (work) n += findVideoBlockGaps(work).length;
   return n;
 }
@@ -311,6 +323,7 @@ function WorkEditorInner({ workId, siteUrl }: { workId: string; siteUrl: string 
             hasCardImage,
             summaryKo: draft?.summary.ko,
             keyAltKo: draft?.key_image_alt.ko,
+            keyAltEn: draft?.key_image_alt.en,
             locationEn: draft?.location_en ?? work.location_en
           }),
           ...buildVideoBlockCheckItems(work),
