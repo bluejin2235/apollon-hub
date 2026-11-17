@@ -1,9 +1,9 @@
 import "server-only";
 
 import { createClient } from "@supabase/supabase-js";
-import sharp from "sharp";
 import { bumpUsageDaily } from "@/lib/luna/engine";
 import { callAnthropicVision } from "@/lib/luna/media-vision-api";
+import { fetchImageAsJpegBase64 } from "@/lib/website/alt-suggest-fetch";
 import type {
   AltSuggestContext,
   AltSuggestKind,
@@ -18,7 +18,6 @@ export { validateAltSuggestion, isAllowedWebsiteImageUrl };
 const FEATURE = "website_alt";
 const DEFAULT_MODEL = "claude-sonnet-5-5";
 const TIMEOUT_MS = 20_000;
-const VISION_MAX_PX = 800;
 
 /** Sonnet 5.5: $2 / MTok in, $10 / MTok out */
 const USD_PER_M_IN = 2;
@@ -60,35 +59,6 @@ function parseJsonAlt(text: string): { ko?: string; en?: string } | null {
     return JSON.parse(match[0]) as { ko?: string; en?: string };
   } catch {
     return null;
-  }
-}
-
-async function fetchImageAsJpegBase64(imageUrl: string): Promise<string | null> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
-  try {
-    const res = await fetch(imageUrl, {
-      signal: controller.signal,
-      headers: { Accept: "image/*" }
-    });
-    if (!res.ok) return null;
-    const buf = Buffer.from(await res.arrayBuffer());
-    if (buf.byteLength < 32) return null;
-    const jpeg = await sharp(buf)
-      .rotate()
-      .resize({
-        width: VISION_MAX_PX,
-        height: VISION_MAX_PX,
-        fit: "inside",
-        withoutEnlargement: true
-      })
-      .jpeg({ quality: 82 })
-      .toBuffer();
-    return jpeg.toString("base64");
-  } catch {
-    return null;
-  } finally {
-    clearTimeout(timer);
   }
 }
 

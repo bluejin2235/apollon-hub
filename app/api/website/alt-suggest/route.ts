@@ -1,19 +1,39 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getApiUser } from "@/lib/auth/get-api-user";
+import { getApiUser, getServiceSupabase } from "@/lib/auth/get-api-user";
+import { canAccessWebsiteAdmin } from "@/lib/auth/website-tester";
 import {
   isAllowedWebsiteImageUrl,
   suggestAlt,
   type AltSuggestContext,
   type AltSuggestKind
 } from "@/lib/website/alt-suggest";
+import { getHubActor } from "@/lib/website/hub-actor";
 
 export const runtime = "nodejs";
 
-/** 같은 이미지 URL · 하루 캐시 (프로세스 메모리) */
+const MAX_PARALLEL = 3;
+const MAX_PER_DAY = 300;
+const FAIL_TTL_MS = 10 * 60 * 1000;
+
+/** 같은 이미지 URL · 하루 성공 캐시 */
 const dayCache = new Map<string, { day: string; ko: string; en: string }>();
+/** 실패 URL · 10분 */
+const failCache = new Map<string, number>();
+
+let inFlight = 0;
+let dayKey = "";
+let dayCount = 0;
 
 function kstDayKey(now = new Date()): string {
   return new Date(now.getTime() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10);
+}
+
+function bumpDayCounter() {
+  const day = kstDayKey();
+  if (day !== dayKey) {
+    dayKey = day;
+    dayCount = 0;
+  }
 }
 
 function asString(v: unknown): string {
@@ -37,10 +57,30 @@ function readContext(raw: unknown): AltSuggestContext | null {
   };
 }
 
+function rememberFail(imageUrl: string) {
+  failCache.set(imageUrl, Date.now() + FAIL_TTL_MS);
+  if (failCache.size > 500) {
+    const now = Date.now();
+    for (const [key, exp] of failCache) {
+      if (exp <= now) failCache.delete(key);
+    }
+  }
+}
+
 export async function POST(request: NextRequest) {
   const user = await getApiUser(request);
   if (!user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const admin = getServiceSupabase();
+  if (!admin) {
+    return NextResponse.json({ error: "Server configuration error" }, { status: 500 });
+  }
+
+  const actor = await getHubActor(admin, user.id);
+  if (!canAccessWebsiteAdmin(actor.role)) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   let body: unknown = null;
@@ -73,8 +113,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ data: { ko: cached.ko, en: cached.en }, cached: true });
   }
 
-  const result = await suggestAlt({ imageUrl, context });
-  if (!result) {
+  const failUntil = failCache.get(imageUrl) ?? 0;
+  if (failUntil > Date.now()) {
     return NextResponse.json({
       data: null,
       error: "suggest_failed",
@@ -82,13 +122,43 @@ export async function POST(request: NextRequest) {
     });
   }
 
-  dayCache.set(imageUrl, { day, ko: result.ko, en: result.en });
-  // 캐시 비대 방지
-  if (dayCache.size > 500) {
-    for (const [key, value] of dayCache) {
-      if (value.day !== day) dayCache.delete(key);
-    }
+  bumpDayCounter();
+  if (dayCount >= MAX_PER_DAY) {
+    return NextResponse.json(
+      { data: null, error: "rate_limited", reason: "오늘은 자동 설명을 더 만들 수 없습니다" },
+      { status: 429 }
+    );
+  }
+  if (inFlight >= MAX_PARALLEL) {
+    return NextResponse.json(
+      { data: null, error: "busy", reason: "잠시 뒤에 다시 시도해 주세요" },
+      { status: 429 }
+    );
   }
 
-  return NextResponse.json({ data: result, cached: false });
+  inFlight += 1;
+  dayCount += 1;
+  try {
+    const result = await suggestAlt({ imageUrl, context });
+    if (!result) {
+      rememberFail(imageUrl);
+      return NextResponse.json({
+        data: null,
+        error: "suggest_failed",
+        reason: "자동 설명을 못 썼어요. 직접 써 주세요"
+      });
+    }
+
+    dayCache.set(imageUrl, { day, ko: result.ko, en: result.en });
+    failCache.delete(imageUrl);
+    if (dayCache.size > 500) {
+      for (const [key, value] of dayCache) {
+        if (value.day !== day) dayCache.delete(key);
+      }
+    }
+
+    return NextResponse.json({ data: result, cached: false });
+  } finally {
+    inFlight = Math.max(0, inFlight - 1);
+  }
 }

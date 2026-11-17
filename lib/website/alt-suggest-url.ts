@@ -1,5 +1,12 @@
-/** 클라이언트·서버·시험이 공유하는 이미지 URL 허용 규칙 */
+/** 홈페이지 Supabase 공개 스토리지만 허용 */
 
+export const WEBSITE_STORAGE_HOST =
+  process.env.WEBSITE_STORAGE_HOST?.trim() || "qvkpycyhgzqyujzjozyp.supabase.co";
+
+const PUBLIC_OBJECT =
+  /^\/storage\/v1\/object\/public\/(works|insights|site)\//i;
+
+/** https + 홈페이지 스토리지 호스트 + works|insights|site 공개 경로만 */
 export function isAllowedWebsiteImageUrl(imageUrl: string): boolean {
   const raw = imageUrl.trim();
   if (!raw) return false;
@@ -10,34 +17,12 @@ export function isAllowedWebsiteImageUrl(imageUrl: string): boolean {
   } catch {
     return false;
   }
-  if (url.protocol !== "http:" && url.protocol !== "https:") return false;
+  if (url.protocol !== "https:") return false;
+  if (url.hostname.toLowerCase() !== WEBSITE_STORAGE_HOST.toLowerCase()) return false;
+  if (!PUBLIC_OBJECT.test(url.pathname)) return false;
+  return true;
+}
 
-  const host = url.hostname.toLowerCase();
-  const path = url.pathname;
-
-  const siteOrigin = process.env.NEXT_PUBLIC_WEBSITE_ORIGIN?.trim();
-  if (siteOrigin) {
-    try {
-      const originHost = new URL(siteOrigin).hostname.toLowerCase();
-      if (host === originHost) return true;
-    } catch {
-      /* ignore */
-    }
-  }
-
-  if (
-    host.endsWith(".supabase.co") &&
-    /\/storage\/v1\/object\/public\/(works|insights|site)\//i.test(path)
-  ) {
-    return true;
-  }
-
-  if (
-    /\/(works|insights|site)\//i.test(path) &&
-    (host.includes("apollonworks") || host === "localhost")
-  ) {
-    return true;
-  }
-
-  return false;
+export function isRedirectStatus(status: number): boolean {
+  return status >= 300 && status < 400;
 }
