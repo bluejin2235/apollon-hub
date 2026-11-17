@@ -41,7 +41,7 @@ import {
   resolveImageUrlForAlt,
   type AltSuggestStatus
 } from "@/lib/website/alt-suggest-client";
-import { shouldApplyAiAlt } from "@/lib/website/alt-suggest-apply";
+import { hasExistingAlt, isSameAltTarget, mergeAiAlt } from "@/lib/website/alt-suggest-apply";
 import type { AltSuggestContext } from "@/lib/website/alt-suggest-types";
 import {
   beginPendingAlt,
@@ -51,7 +51,6 @@ import {
   setPendingAlt,
   subscribePendingAlt
 } from "@/lib/website/alt-suggest-pending";
-import { isPlaceholderAlt } from "@/lib/website/placeholder-alt";
 import { describeBlockError } from "@/lib/website/block-error";
 import {
   sanitizeUploadFilename,
@@ -1069,6 +1068,16 @@ function ImageRow({
   const captionRef = useRef(caption);
   altRef.current = alt;
   captionRef.current = caption;
+  const imageIdRef = useRef(image.id);
+  imageIdRef.current = image.id;
+  const imageSrcRef = useRef(image.src);
+  imageSrcRef.current = image.src;
+  const altSeqRef = useRef(0);
+  useEffect(() => {
+    return () => {
+      altSeqRef.current += 1;
+    };
+  }, []);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingRef = useRef<Record<string, unknown>>({});
   const inflightRef = useRef<Promise<boolean> | null>(null);
@@ -1100,20 +1109,18 @@ function ImageRow({
         clearPendingAlt(image.src);
         return;
       }
-      const now = altRef.current;
-      if (
-        !shouldApplyAiAlt({
-          koBefore: pending.koBefore,
-          enBefore: pending.enBefore,
-          koNow: now.ko,
-          enNow: now.en
-        })
-      ) {
+      // 올릴 때 자동 채우기 — 빈칸·임시값인 언어만 채운다
+      const next = mergeAiAlt({
+        before: { ko: pending.koBefore, en: pending.enBefore },
+        now: altRef.current,
+        result: { ko: pending.ko, en: pending.en },
+        force: false
+      });
+      if (!next) {
         setAltAi("kept");
         clearPendingAlt(image.src);
         return;
       }
-      const next = { ko: pending.ko, en: pending.en };
       altRef.current = next;
       setAlt(next);
       schedule({ alt: next });
@@ -1254,36 +1261,40 @@ function ImageRow({
               void (async () => {
                 if (!altContext) return;
                 const before = { ...altRef.current };
-                if (!confirmOverwriteAlt(!isPlaceholderAlt(before.ko))) return;
+                if (!confirmOverwriteAlt(hasExistingAlt(before))) return;
                 const url = resolveImageUrlForAlt(siteUrl, image.src);
                 if (!url) {
                   setAltAi("failed");
                   return;
                 }
+                // 새 요청이 시작되면 이전 요청 결과는 버린다
+                const started = { contentId: image.id, src: image.src, seq: ++altSeqRef.current };
                 setAltAi("loading");
                 const result = await requestAltSuggest({
                   imageUrl: url,
                   context: { ...altContext, fileName: fileName(image.src) }
                 });
+                const current = {
+                  contentId: imageIdRef.current,
+                  src: imageSrcRef.current,
+                  seq: altSeqRef.current
+                };
+                if (!isSameAltTarget(started, current)) {
+                  if (started.seq === current.seq) setAltAi("idle");
+                  return;
+                }
                 if (!result) {
                   setAltAi("failed");
                   return;
                 }
-                const now = altRef.current;
-                if (
-                  !shouldApplyAiAlt({
-                    koBefore: before.ko,
-                    enBefore: before.en,
-                    koNow: now.ko,
-                    enNow: now.en
-                  })
-                ) {
+                const next = mergeAiAlt({ before, now: altRef.current, result, force: true });
+                if (!next) {
                   setAltAi("kept");
                   return;
                 }
-                altRef.current = result;
-                setAlt(result);
-                schedule({ alt: result });
+                altRef.current = next;
+                setAlt(next);
+                schedule({ alt: next });
                 setAltAi("filled");
               })();
             }}

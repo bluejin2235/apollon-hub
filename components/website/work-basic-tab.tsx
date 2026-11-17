@@ -26,8 +26,7 @@ import {
   shouldAutoFillAlt,
   type AltSuggestStatus
 } from "@/lib/website/alt-suggest-client";
-import { shouldApplyAiAlt } from "@/lib/website/alt-suggest-apply";
-import { isPlaceholderAlt } from "@/lib/website/placeholder-alt";
+import { hasExistingAlt, isSameAltTarget, mergeAiAlt } from "@/lib/website/alt-suggest-apply";
 import { useFullSave } from "@/components/website/full-save-registry";
 import { AutoSaveLabel, PartialSaveBtn, type PartialSaveState } from "@/components/website/partial-save-btn";
 import { useAutoPartialSave } from "@/components/website/use-auto-partial-save";
@@ -428,6 +427,15 @@ export function WorkBasicTab({ draft, onChange, work, categories, siteUrl, onRel
 
   const draftRef = useRef(draft);
   draftRef.current = draft;
+  const contentIdRef = useRef(work.id);
+  contentIdRef.current = work.id;
+  const keyAltSeqRef = useRef(0);
+  useEffect(() => {
+    // 화면을 떠나면 진행 중인 대표 이미지 설명 요청 결과는 버린다
+    return () => {
+      keyAltSeqRef.current += 1;
+    };
+  }, []);
   const writeDraft = useCallback(
     (patch: Partial<WorkBasicDraft>) => {
       draftRef.current = { ...draftRef.current, ...patch };
@@ -582,29 +590,34 @@ export function WorkBasicTab({ draft, onChange, work, categories, siteUrl, onRel
       }
       const before = { ...draftRef.current.key_image_alt };
       if (!force && !shouldAutoFillAlt(before.ko)) return;
-      if (force && !confirmOverwriteAlt(!isPlaceholderAlt(before.ko))) return;
+      if (force && !confirmOverwriteAlt(hasExistingAlt(before))) return;
+      // 새 요청이 시작되면 이전 요청 결과는 버린다
+      const started = { contentId: contentIdRef.current, src: imageSrc, seq: ++keyAltSeqRef.current };
       setKeyAltAi("loading");
       const result = await requestAltSuggest({
         imageUrl: url,
         context: { ...buildKeyAltContext(), fileName }
       });
+      const current = {
+        contentId: contentIdRef.current,
+        src: draftRef.current.key_image,
+        seq: keyAltSeqRef.current
+      };
+      if (!isSameAltTarget(started, current)) {
+        // 그사이 이미지가 바뀌었거나 지워졌거나 새 요청이 나감 — 이 결과는 버림
+        if (started.seq === current.seq) setKeyAltAi("idle");
+        return;
+      }
       if (!result) {
         setKeyAltAi("failed");
         return;
       }
-      const now = draftRef.current.key_image_alt;
-      if (
-        !shouldApplyAiAlt({
-          koBefore: before.ko,
-          enBefore: before.en,
-          koNow: now.ko,
-          enNow: now.en
-        })
-      ) {
+      const next = mergeAiAlt({ before, now: draftRef.current.key_image_alt, result, force });
+      if (!next) {
         setKeyAltAi("kept");
         return;
       }
-      writeDraft({ key_image_alt: { ko: result.ko, en: result.en } });
+      writeDraft({ key_image_alt: next });
       searchAuto.schedule();
       setKeyAltAi("filled");
     },
