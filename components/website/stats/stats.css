@@ -1052,16 +1052,18 @@ a.ws-chip {
   align-items: start;
 }
 
-.ws-ai-read {
+.ws-ai-read,
+.ws-ai-visit {
   grid-column: 1 / -1;
 }
 
 @container ws-main (min-width: 720px) {
   .ws-ai-kpis {
-    grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1.4fr) minmax(0, 0.8fr) minmax(0, 1.4fr);
   }
 
-  .ws-ai-read {
+  .ws-ai-read,
+  .ws-ai-visit {
     grid-column: auto;
   }
 }
@@ -1070,12 +1072,58 @@ a.ws-chip {
   margin-top: 12px;
 }
 
+.ws-ai-cards {
+  display: grid;
+  gap: 10px;
+  margin-top: 6px;
+}
+
+.ws-ai-card {
+  min-width: 0;
+}
+
+.ws-ai-fail {
+  color: var(--dn);
+}
+
+.ws-ai-llms td {
+  background: #f7f8fa;
+  font-weight: 500;
+}
+
+.ws-ai-search {
+  margin-top: 12px;
+  font-size: 11.5px;
+  color: var(--ink3);
+}
+
+.ws-ai-search summary {
+  cursor: pointer;
+  list-style: none;
+}
+
+.ws-ai-search summary::-webkit-details-marker {
+  display: none;
+}
+
+.ws-ai-guide {
+  margin-top: 10px;
+}
+
+.ws-ai-guide .ws-kpi-sub {
+  margin-top: 2px;
+}
+
 .ws-val-sm {
   font-size: 18px;
   font-weight: 600;
   margin: 2px 0 1px;
   letter-spacing: -0.01em;
   color: var(--ink3);
+}
+
+.ws-val-sm.ws-ai-fail {
+  color: var(--dn);
 }
 
 @media (max-width: 800px) {

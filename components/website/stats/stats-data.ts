@@ -336,6 +336,37 @@ export function makeDelta(
   };
 }
 
+/** 앞·뒤 개수가 모두 이보다 작으면 % 대신 개수 차이(+2)를 쓴다 */
+export const DELTA_SMALL_COUNT = 5;
+
+/**
+ * 개수 증감. 앞·뒤 모두 DELTA_SMALL_COUNT 미만이면 「+2」「-1」「0」,
+ * 아니면 makeDelta 의 ratio 와 같다. 앞 기간 값이 없으면 비교 불가.
+ */
+export function makeCountDelta(
+  current: number | null,
+  previous: number | null,
+  higherIsBetter: boolean,
+  previousLabel: string | null
+): DeltaView {
+  if (
+    current != null &&
+    previous != null &&
+    current < DELTA_SMALL_COUNT &&
+    previous < DELTA_SMALL_COUNT
+  ) {
+    const diff = Math.round(current - previous);
+    if (diff === 0) return { delta: "0", tone: "flat", previous: previousLabel };
+    const rising = diff > 0;
+    return {
+      delta: `${rising ? "+" : "-"}${Math.abs(diff)}`,
+      tone: rising === higherIsBetter ? "up" : "down",
+      previous: previousLabel
+    };
+  }
+  return makeDelta(current, previous, "ratio", higherIsBetter, previousLabel);
+}
+
 /** KPI 카드 안 작은 추이선. 두 점 미만이면 빈 배열 — 선이 그려지지 않는다 */
 export function sparkOf(
   rows: StatsPoint[],

@@ -45,6 +45,12 @@ export type KeyCompare = {
   position: MetricCompare;
 };
 
+type AiVisitsPeriodShape = {
+  total: number;
+  by_name: { name: string; sessions: number }[];
+  top_pages: { path: string; lang: "ko" | "en"; sessions: number }[];
+};
+
 /** 날짜 없는 합계가 담은 기간 */
 export type StatsPeriod = { from: string; to: string };
 
@@ -94,6 +100,14 @@ export type StatsQueryResult = {
       byName: Record<string, { current: number; previous: number | null }>;
     };
     verified: boolean;
+  };
+  /**
+   * kind=ai_visits 일 때만. GA 출처 × 도착 페이지(source_landing)를 AI 출처로 묶은 세션.
+   * 타입은 ai-data 의 AiVisitsPeriod 와 같다.
+   */
+  ai_visits?: {
+    current: AiVisitsPeriodShape;
+    previous: AiVisitsPeriodShape;
   };
   kind: string;
   /** 고른 기간 안의 일별 행 */

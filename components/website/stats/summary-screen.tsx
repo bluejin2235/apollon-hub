@@ -4,8 +4,8 @@
  * 요약 화면 — docs/website-mockups/hub-stats-v3 의 「요약」.
  *
  * 카드 다섯 칸 중 셋(방문자 · 일반 명사 검색 클릭 · 검색→글 진입 비율)은
- * website_stats 로 채운다. AI 방문·문의하기 누름은 모으는 기록이
- * 아직 없어 「준비 중」 한 줄만 둔다. 지어낸 숫자는 넣지 않는다.
+ * website_stats 로 채운다. AI 에서 온 방문은 kind=ai_visits 로 AI 화면과 같은 숫자를 쓴다.
+ * 응답에 값이 없는 칸은 「준비 중」 한 줄만 둔다. 지어낸 숫자는 넣지 않는다.
  */
 
 import Link from "next/link";
@@ -41,7 +41,7 @@ import type { StatsBriefResult } from "@/lib/website/api";
 
 /** 카드 물음표를 누르면 뜨는 설명. summary 는 카드 안 한 줄이다 */
 const CARD_HINTS: Record<
-  "visit" | "genericClick" | "searchToArticle" | "inquiryClick",
+  "visit" | "genericClick" | "searchToArticle" | "ai" | "inquiryClick",
   MetricHint
 > = {
   visit: {
@@ -74,6 +74,16 @@ const CARD_HINTS: Record<
     criterion: "오를수록 좋습니다. 검색 방문이 몇 번 안 될 때는 한 번에도 크게 움직입니다.",
     action: "낮다면 많이 찾는 주제의 글 제목과 첫 문단을 손보세요.",
     limit: "구글·네이버 같은 검색엔진을 함께 셉니다. 첫 페이지를 알 수 없는 방문은 빼고 셉니다."
+  },
+  ai: {
+    id: "ai",
+    title: SUMMARY_CARD_LABEL.ai.label,
+    summary: "ChatGPT·Claude 같은 AI 답의 링크를 눌러 들어온 방문",
+    definition:
+      "ChatGPT·Claude·Perplexity·Gemini·Copilot 에서 우리 페이지로 들어온 방문 수입니다. AI 화면의 「사람이 옴」과 같은 숫자입니다.",
+    criterion: "아직 숫자가 작습니다. 한두 번의 차이보다 4주 이상 늘어나는지 보세요.",
+    action: "AI 화면에서 어느 AI 가 어느 페이지로 보냈는지 보고, 그 페이지를 더 다듬으세요.",
+    limit: "앱에서 온 방문과 출처를 숨긴 방문은 잡히지 않아 실제보다 적습니다."
   },
   inquiryClick: {
     id: "inquiryClick",

@@ -8,6 +8,7 @@
  * 그래서 current 는 새 사이트 값이고, previous 는 옛 사이트일 수 있다.
  */
 
+import { aiVisitsSummary } from "@/components/website/stats/ai-data";
 import { type StatsRow } from "@/components/website/stats/stats-chart";
 import { isBrandQuery } from "@/components/website/stats/search-data";
 import {
@@ -36,7 +37,7 @@ import {
 import type { PeriodUsersCompare, StatsBundle, StatsPoint } from "@/lib/website/stats";
 
 /** 요약 화면이 쓰는 kind 전부. 한 번에 받아 온다 */
-export const SUMMARY_KINDS = ["daily", "channel", "page", "query", "landing_channel"];
+export const SUMMARY_KINDS = ["daily", "channel", "page", "query", "landing_channel", "ai_visits"];
 
 const SEARCH_SOURCES = ["gsc", "gsc_http"] as const;
 
@@ -174,6 +175,11 @@ export function buildSummaryCards(bundle: StatsBundle | null): SummaryCard[] {
       ...makeDelta(rate, ratePrev, "point", true, withUnit(pct(ratePrev), "searchToArticle"))
     }
   ];
+
+  const ai = aiVisitsSummary(bundle, (value) => withUnit(intText(value), "ai"));
+  if (ai) {
+    cards.push({ id: "ai", value: intText(ai.total), ...ai.delta });
+  }
 
   const click = readMetricCompare(bundle, "lets_talk_click");
   if (click && typeof click.current === "number") {
