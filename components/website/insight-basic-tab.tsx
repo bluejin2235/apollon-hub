@@ -2,7 +2,18 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ImageUploader } from "@/components/website/image-uploader";
-import { AltSuggestStatusLine, confirmOverwriteAlt } from "@/components/website/alt-suggest-ui";
+import {
+  AltReviewNotice,
+  AltSuggestStatusLine,
+  confirmOverwriteAlt
+} from "@/components/website/alt-suggest-ui";
+import {
+  altReviewState,
+  confirmAltReview,
+  markAltReviewOnReplace,
+  moveAltReviewSrc
+} from "@/lib/website/alt-review";
+import { useKeyAltReview } from "@/lib/website/alt-review-store";
 import { CardLengthCount, CardLengthWarn } from "@/components/website/insight-card-length";
 import {
   requestAltSuggest,
@@ -238,6 +249,8 @@ export function InsightBasicTab({ draft, onChange, insight, categories, siteUrl,
   const contentIdRef = useRef(insight.id);
   contentIdRef.current = insight.id;
   const keyAltSeqRef = useRef(0);
+  const [keyAltReview, setKeyAltReview] = useKeyAltReview("insight", insight.id);
+  const keyAltReviewState = altReviewState(keyAltReview, draft.key_image, draft.key_image_alt);
   useEffect(() => {
     // 화면을 떠나면 진행 중인 대표 이미지 설명 요청 결과는 버린다
     return () => {
@@ -760,6 +773,13 @@ export function InsightBasicTab({ draft, onChange, insight, categories, siteUrl,
                   const first = files[0];
                   if (!first) return;
                   const inferred = ratioFromSize(first.width, first.height);
+                  // 사진을 바꿨으면 남은 설명은 지우지 않고 「확인 필요」로 표시
+                  const prevKey = draftRef.current.key_image;
+                  setKeyAltReview(
+                    !isPlaceholderKey(prevKey) && prevKey !== first.src
+                      ? markAltReviewOnReplace(draftRef.current.key_image_alt, first.src)
+                      : null
+                  );
                   patchMedia({
                     key_image: first.src,
                     key_image_width: first.width,
@@ -906,7 +926,7 @@ export function InsightBasicTab({ draft, onChange, insight, categories, siteUrl,
             </div>
             <div className="two">
               <input
-                className="i"
+                className={keyAltReviewState.ko ? "i need-check" : "i"}
                 value={draft.key_image_alt.ko}
                 onChange={(e) => {
                   if (keyAltAi !== "idle") setKeyAltAi("idle");
@@ -917,7 +937,7 @@ export function InsightBasicTab({ draft, onChange, insight, categories, siteUrl,
                 onBlur={() => void searchAuto.flush()}
               />
               <input
-                className="i"
+                className={keyAltReviewState.en ? "i need-check" : "i"}
                 value={draft.key_image_alt.en}
                 onChange={(e) => {
                   if (keyAltAi !== "idle") setKeyAltAi("idle");
@@ -928,6 +948,10 @@ export function InsightBasicTab({ draft, onChange, insight, categories, siteUrl,
                 onBlur={() => void searchAuto.flush()}
               />
             </div>
+            <AltReviewNotice
+              state={keyAltReviewState}
+              onKeep={(lang) => setKeyAltReview(confirmAltReview(keyAltReview, lang))}
+            />
             <AltSuggestStatusLine
               status={keyAltAi}
               canRewrite={Boolean(draft.key_image?.trim())}
@@ -948,6 +972,8 @@ export function InsightBasicTab({ draft, onChange, insight, categories, siteUrl,
         initialRatio={chosenRatio}
         onClose={() => setCropOpen(false)}
         onSaved={(next) => {
+          // 같은 사진을 다시 자른 것 — 확인 필요 상태는 새 주소로 이어 간다
+          setKeyAltReview(moveAltReviewSrc(keyAltReview, draft.key_image, next.src));
           patchMedia({
             key_image: next.src,
             key_image_width: next.width,

@@ -5,6 +5,12 @@ import { PROBLEM_FLAGS, WARN_FLAGS } from "@/lib/website/checks";
 import { PUBLISH_MSG_ALT, PUBLISH_MSG_SUMMARY } from "@/lib/website/api-fail-message";
 import { isPlaceholderAlt, isShortAlt, isWeakEnglishAlt } from "@/lib/website/placeholder-alt";
 import { formatSmallBodyImageTitle, formatSmallBodyImageWhere } from "@/lib/website/spec";
+import {
+  KEY_ALT_REVIEW_EN_TITLE,
+  KEY_ALT_REVIEW_EN_WHERE,
+  KEY_ALT_REVIEW_TITLE,
+  KEY_ALT_REVIEW_WHERE
+} from "@/lib/website/alt-review";
 import { isLongEdgeTooSmall } from "@/lib/website/image-long-edge";
 import { listSmallWorkBodyImages } from "@/lib/website/small-body-image";
 import type { EditorTab, WorkDetail } from "@/lib/website/work-detail";
@@ -23,7 +29,9 @@ export type WorkCheckItem = {
     | "creator_words_missing_en"
     | "missing_location_en"
     | "weak_english_alt"
-    | "short_alt";
+    | "short_alt"
+    | "key_alt_review"
+    | "key_alt_review_en";
   kind: CheckItemKind;
   tab: EditorTab;
   title: string;
@@ -113,6 +121,8 @@ export function buildWorkCheckItems(
     keyAltKo?: string | null;
     keyAltEn?: string | null;
     locationEn?: string | null;
+    /** 대표 이미지를 바꾼 뒤 남은 설명 — 확인 필요 (국문은 차단, 영문은 경고) */
+    keyAltReview?: { ko: boolean; en: boolean };
   }
 ): WorkCheckItem[] {
   const aiCount = countAiUnconfirmed(work);
@@ -145,6 +155,22 @@ export function buildWorkCheckItems(
       tab: "basic",
       title: PUBLISH_MSG_ALT,
       where: whereLine("basic", "이미지를 못 보는 사람과 AI 가 읽습니다"),
+      focusId: "work-field-key-alt"
+    },
+    {
+      flag: "key_alt_review",
+      kind: "problem",
+      tab: "basic",
+      title: KEY_ALT_REVIEW_TITLE,
+      where: whereLine("basic", KEY_ALT_REVIEW_WHERE),
+      focusId: "work-field-key-alt"
+    },
+    {
+      flag: "key_alt_review_en",
+      kind: "warn",
+      tab: "basic",
+      title: KEY_ALT_REVIEW_EN_TITLE,
+      where: whereLine("basic", KEY_ALT_REVIEW_EN_WHERE),
       focusId: "work-field-key-alt"
     },
     {
@@ -333,6 +359,8 @@ export function buildWorkCheckItems(
     if (item.flag === "short_alt") {
       return shortAltCount > 0;
     }
+    if (item.flag === "key_alt_review") return Boolean(opts?.keyAltReview?.ko);
+    if (item.flag === "key_alt_review_en") return Boolean(opts?.keyAltReview?.en);
     if (item.flag === "no_card_image") return !hasCard;
     if (item.flag === "key_image_too_small") return keyTooSmall;
     if (item.flag === "body_image_too_small") return bodySmallCount > 0;

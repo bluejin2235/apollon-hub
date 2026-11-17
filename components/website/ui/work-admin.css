@@ -3376,3 +3376,8 @@
 }
 
 
+/* 대표 이미지를 바꾼 뒤 남은 설명 — 확인 필요 칸 */
+.wa input.i.need-check {
+  border-color: #f59e0b;
+  background: #fffbeb;
+}

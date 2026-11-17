@@ -7,6 +7,8 @@ import { getMeta, getWork, publishWork, publishWorkPreview, setWorkCategories, u
 import { apiFailMessage } from "@/lib/website/api-fail-message";
 import { fillBasic, fillBody, fillFaq, fillRelated, PROBLEM_FLAGS } from "@/lib/website/checks";
 import { isPlaceholderAlt } from "@/lib/website/placeholder-alt";
+import { altReviewState, NO_ALT_REVIEW, type AltReviewState } from "@/lib/website/alt-review";
+import { useKeyAltReview } from "@/lib/website/alt-review-store";
 import { applyTextDupChecks } from "@/lib/website/text-dup";
 import { fallbackChangeNote, firstPublishNote, skipPublishCheck } from "@/lib/website/publish";
 import type { WorkSiteVisibility } from "@/lib/website/types";
@@ -125,6 +127,7 @@ function problemCount(
   check: CheckWorks | null,
   work?: WorkDetail | null,
   draft?: WorkBasicDraft | null,
+  keyAltReview: AltReviewState = NO_ALT_REVIEW
 ): number {
   if (!check) return PROBLEM_FLAGS.length;
   let n = PROBLEM_FLAGS.filter(
@@ -141,6 +144,8 @@ function problemCount(
   const altKo = draft?.key_image_alt.ko ?? work?.key_image_alt?.ko ?? "";
   if (!summaryKo.trim()) n += 1;
   if (isPlaceholderAlt(altKo)) n += 1;
+  // 대표 이미지를 바꾼 뒤 국문 설명을 아직 확인하지 않음
+  if (keyAltReview.ko) n += 1;
   if (work && (findMissingWorkImageAlts(work).count > 0 || check.missing_image_alt)) n += 1;
   if (work) n += findVideoBlockGaps(work).length;
   return n;
@@ -216,6 +221,7 @@ function WorkEditorInner({ workId, siteUrl }: { workId: string; siteUrl: string 
 
   const [work, setWork] = useState<WorkDetail | null>(null);
   const [draft, setDraft] = useState<WorkBasicDraft | null>(null);
+  const [keyAltReviewRecord] = useKeyAltReview("work", workId);
   const [categories, setCategories] = useState<WebsiteCategory[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -308,10 +314,13 @@ function WorkEditorInner({ workId, siteUrl }: { workId: string; siteUrl: string 
     }
   }
 
+  const keyAltReview = draft
+    ? altReviewState(keyAltReviewRecord, draft.key_image, draft.key_image_alt)
+    : NO_ALT_REVIEW;
   const rawCheck = checkOverride ?? work?.check ?? null;
   const check = work && rawCheck ? applyTextDupChecks(work, rawCheck) : rawCheck;
   const canPublish =
-    problemCount(check, work, draft) === 0 && !(work && creatorWordsBlockPublish(work));
+    problemCount(check, work, draft, keyAltReview) === 0 && !(work && creatorWordsBlockPublish(work));
   const skipCheck = skipPublishCheck();
   const allowPublish = canPublish || skipCheck;
   const visibility = work?.site_visibility ?? "draft";
@@ -324,6 +333,7 @@ function WorkEditorInner({ workId, siteUrl }: { workId: string; siteUrl: string 
             summaryKo: draft?.summary.ko,
             keyAltKo: draft?.key_image_alt.ko,
             keyAltEn: draft?.key_image_alt.en,
+            keyAltReview,
             locationEn: draft?.location_en ?? work.location_en
           }),
           ...buildVideoBlockCheckItems(work),

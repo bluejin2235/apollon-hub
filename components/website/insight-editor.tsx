@@ -21,6 +21,8 @@ import {
   INSIGHT_PROBLEM_FLAGS
 } from "@/lib/website/checks";
 import { isPlaceholderAlt } from "@/lib/website/placeholder-alt";
+import { altReviewState, NO_ALT_REVIEW, type AltReviewState } from "@/lib/website/alt-review";
+import { useKeyAltReview } from "@/lib/website/alt-review-store";
 import { fallbackChangeNote, firstPublishNote, skipPublishCheck } from "@/lib/website/publish";
 import type { CheckInsights, WebsiteCategory, WorkSiteVisibility } from "@/lib/website/types";
 import {
@@ -117,7 +119,8 @@ function tabDot(tab: InsightEditorTab, check: CheckInsights | null, insight?: In
 function problemCount(
   check: CheckInsights | null,
   insight?: InsightDetail | null,
-  draft?: InsightBasicDraft | null
+  draft?: InsightBasicDraft | null,
+  keyAltReview: AltReviewState = NO_ALT_REVIEW
 ): number {
   if (!check) return INSIGHT_PROBLEM_FLAGS.length;
   let n = INSIGHT_PROBLEM_FLAGS.filter(
@@ -131,6 +134,8 @@ function problemCount(
   const altKo = draft?.key_image_alt.ko ?? asLoc(insight?.key_image_alt).ko;
   if (!summaryKo.trim()) n += 1;
   if (isPlaceholderAlt(altKo)) n += 1;
+  // 대표 이미지를 바꾼 뒤 국문 설명을 아직 확인하지 않음
+  if (keyAltReview.ko) n += 1;
   if (
     insight &&
     (findMissingInsightImageAlts(insight).length > 0 || Boolean(check.missing_image_alt))
@@ -217,6 +222,7 @@ function InsightEditorInner({ insightId, siteUrl }: { insightId: string; siteUrl
 
   const [insight, setInsight] = useState<InsightDetail | null>(null);
   const [draft, setDraft] = useState<InsightBasicDraft | null>(null);
+  const [keyAltReviewRecord] = useKeyAltReview("insight", insightId);
   const [categories, setCategories] = useState<WebsiteCategory[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -289,7 +295,10 @@ function InsightEditorInner({ insightId, siteUrl }: { insightId: string; siteUrl
 
   const rawCheck = checkOverride ?? insight?.check ?? null;
   const check = rawCheck;
-  const canPublish = problemCount(check, insight, draft) === 0;
+  const keyAltReview = draft
+    ? altReviewState(keyAltReviewRecord, draft.key_image, draft.key_image_alt)
+    : NO_ALT_REVIEW;
+  const canPublish = problemCount(check, insight, draft, keyAltReview) === 0;
   const skipCheck = skipPublishCheck();
   const allowPublish = skipCheck || canPublish;
   const visibility = insight?.site_visibility ?? "draft";
@@ -298,7 +307,8 @@ function InsightEditorInner({ insightId, siteUrl }: { insightId: string; siteUrl
       ? buildInsightCheckItems(insight, check, {
           summaryKo: draft?.summary.ko,
           keyAltKo: draft?.key_image_alt.ko,
-          keyAltEn: draft?.key_image_alt.en
+          keyAltEn: draft?.key_image_alt.en,
+          keyAltReview
         })
       : [];
   const problemItems = checkItems.filter((item) => item.kind === "problem");

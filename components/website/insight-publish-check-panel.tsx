@@ -9,6 +9,12 @@ import {
 } from "@/lib/website/checks";
 import { isPlaceholderAlt, isShortAlt, isWeakEnglishAlt } from "@/lib/website/placeholder-alt";
 import {
+  KEY_ALT_REVIEW_EN_TITLE,
+  KEY_ALT_REVIEW_EN_WHERE,
+  KEY_ALT_REVIEW_TITLE,
+  KEY_ALT_REVIEW_WHERE
+} from "@/lib/website/alt-review";
+import {
   formatSmallBodyImageTitle,
   formatSmallBodyImageWhere
 } from "@/lib/website/spec";
@@ -27,7 +33,9 @@ export type InsightCheckItem = {
     | (typeof INSIGHT_PROBLEM_FLAGS)[number]
     | (typeof INSIGHT_WARN_FLAGS)[number]
     | "weak_english_alt"
-    | "short_alt";
+    | "short_alt"
+    | "key_alt_review"
+    | "key_alt_review_en";
   kind: InsightCheckItemKind;
   tab: InsightEditorTab;
   title: string;
@@ -168,7 +176,13 @@ function flagOn(check: CheckInsights, flag: InsightServerFlag): boolean {
 export function buildInsightCheckItems(
   insight: InsightDetail,
   check: CheckInsights,
-  opts?: { summaryKo?: string | null; keyAltKo?: string | null; keyAltEn?: string | null }
+  opts?: {
+    summaryKo?: string | null;
+    keyAltKo?: string | null;
+    keyAltEn?: string | null;
+    /** 대표 이미지를 바꾼 뒤 남은 설명 — 확인 필요 (국문은 차단, 영문은 경고) */
+    keyAltReview?: { ko: boolean; en: boolean };
+  }
 ): InsightCheckItem[] {
   const aiCount = countInsightAiUnconfirmed(insight);
   const missingAlts = findMissingInsightImageAlts(insight);
@@ -265,6 +279,22 @@ export function buildInsightCheckItems(
       title: `대체 텍스트가 한 글자입니다 ${shortAltCount}건`,
       where: whereLine("basic", "무엇이 어디에 있는지 한 문장으로 쓰면 더 좋습니다. 그대로 공개할 수 있습니다"),
       focusId: "insight-field-key-alt"
+    },
+    {
+      flag: "key_alt_review" as const,
+      kind: "problem" as const,
+      tab: "basic" as const,
+      title: KEY_ALT_REVIEW_TITLE,
+      where: whereLine("basic", KEY_ALT_REVIEW_WHERE),
+      focusId: "insight-field-key-alt"
+    },
+    {
+      flag: "key_alt_review_en" as const,
+      kind: "warn" as const,
+      tab: "basic" as const,
+      title: KEY_ALT_REVIEW_EN_TITLE,
+      where: whereLine("basic", KEY_ALT_REVIEW_EN_WHERE),
+      focusId: "insight-field-key-alt"
     }
   ];
   return all.filter((item) => {
@@ -283,6 +313,8 @@ export function buildInsightCheckItems(
     if (item.flag === "short_alt") {
       return shortAltCount > 0;
     }
+    if (item.flag === "key_alt_review") return Boolean(opts?.keyAltReview?.ko);
+    if (item.flag === "key_alt_review_en") return Boolean(opts?.keyAltReview?.en);
     if (item.flag === "body_image_too_small") return smallBody.length > 0;
     return flagOn(check, item.flag);
   });
