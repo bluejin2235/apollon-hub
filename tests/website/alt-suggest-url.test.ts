@@ -64,6 +64,19 @@ describe("isAllowedWebsiteImageUrl", () => {
     );
   });
 
+  it("비표준 포트 · 사용자 정보 섞인 주소 막힘 (고정 origin 비교)", () => {
+    const path = "/storage/v1/object/public/works/a.jpg";
+    assert.equal(isAllowedWebsiteImageUrl(`https://${WEBSITE_STORAGE_HOST}:8443${path}`), false);
+    assert.equal(isAllowedWebsiteImageUrl(`https://user:pw@${WEBSITE_STORAGE_HOST}${path}`), false);
+    assert.equal(isAllowedWebsiteImageUrl(`https://user@${WEBSITE_STORAGE_HOST}${path}`), false);
+    assert.equal(
+      isAllowedWebsiteImageUrl(`https://${WEBSITE_STORAGE_HOST}.evil.example${path}`),
+      false
+    );
+    // 기본 포트 443 을 적어도 같은 origin
+    assert.equal(isAllowedWebsiteImageUrl(`https://${WEBSITE_STORAGE_HOST}:443${path}`), true);
+  });
+
   it("%2e%2e · %2E%2E · ..%2f 섞인 주소 막힘", () => {
     const base = `https://${WEBSITE_STORAGE_HOST}/storage/v1/object/public/works`;
     assert.equal(isAllowedWebsiteImageUrl(`${base}/%2e%2e%2fsecrets/x`), false);

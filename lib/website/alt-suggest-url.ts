@@ -1,7 +1,8 @@
 /** 홈페이지 Supabase 공개 스토리지만 허용 */
 
-export const WEBSITE_STORAGE_HOST =
-  process.env.WEBSITE_STORAGE_HOST?.trim() || "qvkpycyhgzqyujzjozyp.supabase.co";
+/** 고정값 — 환경 변수로 바꾸지 않는다 (포트·사용자 정보가 끼어들 틈을 없앤다) */
+export const WEBSITE_STORAGE_HOST = "qvkpycyhgzqyujzjozyp.supabase.co";
+export const WEBSITE_STORAGE_ORIGIN = `https://${WEBSITE_STORAGE_HOST}`;
 
 const PUBLIC_OBJECT =
   /^\/storage\/v1\/object\/public\/(works|insights|site)\//i;
@@ -52,7 +53,9 @@ export function isAllowedWebsiteImageUrl(imageUrl: string): boolean {
     return false;
   }
   if (url.protocol !== "https:") return false;
-  if (url.hostname.toLowerCase() !== WEBSITE_STORAGE_HOST.toLowerCase()) return false;
+  // 호스트 이름만이 아니라 origin 전체(프로토콜·호스트·포트)를 비교하고, 사용자 정보는 거절
+  if (url.origin !== WEBSITE_STORAGE_ORIGIN) return false;
+  if (url.port !== "" || url.username !== "" || url.password !== "") return false;
 
   const path = sanitizeWebsiteImagePathname(url.pathname);
   if (!path) return false;

@@ -3,14 +3,20 @@ import { getApiUser, getServiceSupabase } from "@/lib/auth/get-api-user";
 import { canAccessWebsiteAdmin } from "@/lib/auth/website-tester";
 import {
   isAllowedWebsiteImageUrl,
-  suggestAlt,
-  type AltSuggestContext,
-  type AltSuggestKind
+  suggestAlt
 } from "@/lib/website/alt-suggest";
+import { readAltSuggestContext } from "@/lib/website/alt-suggest-context";
 import { getHubActor } from "@/lib/website/hub-actor";
 
 export const runtime = "nodejs";
 
+/*
+ * 한도 주의 (2026-11-17 코덱스 검토 · 팀장 판단으로 보류):
+ * 동시 3건 · 하루 300건 · 실패/성공 캐시는 서버 프로세스 메모리에만 있다.
+ * 서버가 여러 개로 뜨면 서버마다 따로 세고, 재시작하면 0 부터 다시 센다.
+ * 관리자 로그인이 있어야 부를 수 있고 1건 약 0.0026달러라 이번엔 고치지 않는다.
+ * 고칠 때는 공유 저장소의 원자적 하루 카운터 · 동시 실행 임대 · 만료 캐시로 바꾼다.
+ */
 const MAX_PARALLEL = 3;
 const MAX_PER_DAY = 300;
 const FAIL_TTL_MS = 10 * 60 * 1000;
@@ -40,22 +46,6 @@ function asString(v: unknown): string {
   return typeof v === "string" ? v.trim() : "";
 }
 
-function readContext(raw: unknown): AltSuggestContext | null {
-  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
-  const o = raw as Record<string, unknown>;
-  const kind = asString(o.kind);
-  if (kind !== "work" && kind !== "insight") return null;
-  return {
-    kind: kind as AltSuggestKind,
-    titleKo: asString(o.titleKo) || null,
-    titleEn: asString(o.titleEn) || null,
-    category: asString(o.category) || null,
-    locationCity: asString(o.locationCity) || null,
-    locationCountry: asString(o.locationCountry) || null,
-    sectionTitle: asString(o.sectionTitle) || null,
-    fileName: asString(o.fileName) || null
-  };
-}
 
 function rememberFail(imageUrl: string) {
   failCache.set(imageUrl, Date.now() + FAIL_TTL_MS);
@@ -91,7 +81,7 @@ export async function POST(request: NextRequest) {
   }
   const rec = body && typeof body === "object" ? (body as Record<string, unknown>) : null;
   const imageUrl = asString(rec?.imageUrl);
-  const context = readContext(rec?.context);
+  const context = readAltSuggestContext(rec?.context);
 
   if (!imageUrl || !context) {
     return NextResponse.json(

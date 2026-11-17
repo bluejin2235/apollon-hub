@@ -51,6 +51,12 @@ export async function callAnthropicVision(opts: {
   prompt: string;
   jpegBase64: string;
   maxTokens?: number;
+  /** 끊으면 실제 HTTP 요청까지 취소된다 */
+  signal?: AbortSignal;
+  /** SDK 자체 재시도 횟수 (미지정이면 SDK 기본값) */
+  maxRetries?: number;
+  /** SDK 요청 시간 상한(ms) */
+  timeoutMs?: number;
 }): Promise<VisionApiResult> {
   const key = lunaAnthropicApiKey();
   if (!key) {
@@ -59,7 +65,11 @@ export async function callAnthropicVision(opts: {
     );
   }
 
-  const client = new Anthropic({ apiKey: key });
+  const client = new Anthropic({
+    apiKey: key,
+    ...(opts.maxRetries != null ? { maxRetries: opts.maxRetries } : {}),
+    ...(opts.timeoutMs != null ? { timeout: opts.timeoutMs } : {})
+  });
   try {
     const res = await client.messages.create({
       model: opts.model,
@@ -80,7 +90,7 @@ export async function callAnthropicVision(opts: {
           ]
         }
       ]
-    });
+    }, opts.signal ? { signal: opts.signal } : undefined);
     const text =
       res.content.find((b) => b.type === "text")?.text?.trim() ?? "";
     return {

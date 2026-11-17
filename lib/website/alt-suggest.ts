@@ -18,6 +18,8 @@ export { validateAltSuggestion, isAllowedWebsiteImageUrl };
 const FEATURE = "website_alt";
 const DEFAULT_MODEL = "claude-sonnet-5-5";
 const TIMEOUT_MS = 20_000;
+/** SDK 자체 재시도 — 20초 안에서 한 번 더 시도하면 비용·슬롯이 늘어나므로 0 */
+const SDK_MAX_RETRIES = 0;
 
 /** Sonnet 5.5: $2 / MTok in, $10 / MTok out */
 const USD_PER_M_IN = 2;
@@ -109,25 +111,31 @@ export async function suggestAlt(opts: {
   let apiText = "";
   let inputTokens = 0;
   let outputTokens = 0;
+  // 20초가 지나면 실제 AI 요청을 끊는다. 이 함수는 요청이 정말 끝난 뒤에야 돌아오므로
+  // 부르는 쪽(route)의 동시 슬롯도 그때 반환된다.
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
   try {
-    const result = await Promise.race([
-      callAnthropicVision({
-        model,
-        prompt,
-        jpegBase64,
-        maxTokens: 300
-      }),
-      new Promise<never>((_, reject) => {
-        setTimeout(() => reject(new Error("timeout")), TIMEOUT_MS);
-      })
-    ]);
+    const result = await callAnthropicVision({
+      model,
+      prompt,
+      jpegBase64,
+      maxTokens: 300,
+      signal: controller.signal,
+      maxRetries: SDK_MAX_RETRIES,
+      timeoutMs: TIMEOUT_MS
+    });
     apiText = result.text;
     inputTokens = result.input_tokens;
     outputTokens = result.output_tokens;
   } catch {
+    // 끊긴 요청은 응답(사용량)을 받지 못해 기록할 수 없다
     return null;
+  } finally {
+    clearTimeout(timer);
   }
 
+  // 시간 상한 근처에서 늦게 끝난 응답도 받았으면 사용량을 기록한다
   if (inputTokens || outputTokens) {
     recordAltUsage(model, inputTokens, outputTokens);
   }
