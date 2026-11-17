@@ -7,7 +7,8 @@
 
 import { useMemo } from "react";
 
-import { axisLabel, LineChart } from "@/components/website/stats-v3/v3-chart";
+import { shortDate } from "@/components/website/stats/stats-data";
+import { LineChart } from "@/components/website/stats-v3/v3-chart";
 import { titlesOf } from "@/components/website/stats-v3/v3-content-data";
 import { DeltaBlock, Intro, LangBadge, List, PrepBadge, StatusLine, Badge } from "@/components/website/stats-v3/v3-parts";
 import { rangeText } from "@/components/website/stats-v3/v3-period";
@@ -134,7 +135,7 @@ export function V3Search({ bundle, status, today, catalog }: V3ScreenProps) {
                 <LineChart
                   mini
                   two
-                  labels={series.dates.map(axisLabel)}
+                  labels={series.dates.map(shortDate)}
                   current={series.current}
                   previous={series.previous}
                   format={countTick}

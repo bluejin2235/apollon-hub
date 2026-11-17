@@ -995,7 +995,7 @@
 
 .v3-mini-stats {
   display: grid;
-  grid-template-columns: 1fr;
+  grid-template-columns: 1fr 1fr;
   gap: 14px;
   margin-top: 20px;
   border-top: 1px solid var(--line);
@@ -1004,7 +1004,7 @@
 
 .v3-mini-stat {
   display: grid;
-  grid-template-columns: 200px 1fr;
+  grid-template-columns: 1fr 1.2fr;
   gap: 12px;
   align-items: center;
 }
@@ -1013,8 +1013,9 @@
   font-size: 25px;
 }
 
+/* 허브 본문은 목업보다 좁아 작은 그래프가 반쯤으로 줄어든다 — 눈금 글자를 키워 읽히게 */
 .v3 .v3-mini-stat svg text {
-  font-size: 13px;
+  font-size: 20px;
 }
 
 .v3-conversion {
@@ -1209,7 +1210,7 @@
     font-size: 21px;
   }
 
-  .v3-mini-stat,
+  .v3-mini-stats,
   .v3-detail-grid {
     grid-template-columns: 1fr;
   }
