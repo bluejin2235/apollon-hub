@@ -4,6 +4,7 @@ import { describe, it } from "node:test";
 import {
   hasHangulInText,
   isPlaceholderAlt,
+  isShortAlt,
   isWeakEnglishAlt
 } from "../../lib/website/placeholder-alt";
 
@@ -23,9 +24,15 @@ describe("isPlaceholderAlt", () => {
     assert.equal(isPlaceholderAlt("1-2"), true);
   });
 
-  it("한 글자면 참", () => {
-    assert.equal(isPlaceholderAlt("a"), true);
-    assert.equal(isPlaceholderAlt("가"), true);
+  it("한 글자는 거짓 (「꽃」「숲」 같은 정상 설명) — 경고 대상", () => {
+    assert.equal(isPlaceholderAlt("꽃"), false);
+    assert.equal(isPlaceholderAlt("숲"), false);
+    assert.equal(isShortAlt("꽃"), true);
+    assert.equal(isShortAlt("숲"), true);
+    assert.equal(isShortAlt("빛의 정원"), false);
+    // 한 글자라도 숫자·기호면 여전히 임시값 (경고가 아니라 차단)
+    assert.equal(isPlaceholderAlt("1"), true);
+    assert.equal(isShortAlt("1"), false);
   });
 
   it("금지 낱말과 같으면 참 (대소문자·공백 무시)", () => {
@@ -90,7 +97,8 @@ describe("isPlaceholderAlt", () => {
 });
 
 describe("isWeakEnglishAlt", () => {
-  it("임시 영문·빈칸은 참", () => {
+  it("임시 영문·빈칸·한 글자는 참", () => {
+    assert.equal(isWeakEnglishAlt("a"), true);
     assert.equal(isWeakEnglishAlt("00"), true);
     assert.equal(isWeakEnglishAlt(""), true);
     assert.equal(isWeakEnglishAlt("test"), true);
@@ -111,12 +119,44 @@ describe("isWeakEnglishAlt", () => {
 });
 
 describe("임시 대체 텍스트면 공개 막힘", () => {
-  it("00 · 임시 · 이미지 · IMG_1234.jpg · a · 공백만은 막힌다", () => {
+  it("00 · 임시 · 이미지 · IMG_1234.jpg · 공백만은 막힌다", () => {
     assert.equal(isPlaceholderAlt("00"), true);
     assert.equal(isPlaceholderAlt("임시"), true);
     assert.equal(isPlaceholderAlt("이미지"), true);
     assert.equal(isPlaceholderAlt("IMG_1234.jpg"), true);
-    assert.equal(isPlaceholderAlt("a"), true);
     assert.equal(isPlaceholderAlt("   "), true);
+  });
+
+  it("한 글자는 막지 않고 경고만", () => {
+    assert.equal(isPlaceholderAlt("a"), false);
+    assert.equal(isShortAlt("a"), true);
+  });
+});
+
+describe("임시 낱말로 시작하거나 「이미지 낱말 + 번호」 꼴은 막힘", () => {
+  it("임시 낱말 + 용·값·이미지 낱말·번호", () => {
+    assert.equal(isPlaceholderAlt("임시 이미지"), true);
+    assert.equal(isPlaceholderAlt("테스트용"), true);
+    assert.equal(isPlaceholderAlt("임시값"), true);
+    assert.equal(isPlaceholderAlt("테스트용 사진 2"), true);
+    assert.equal(isPlaceholderAlt("test image"), true);
+    assert.equal(isPlaceholderAlt("sample photo 3"), true);
+    assert.equal(isPlaceholderAlt("샘플"), true);
+  });
+
+  it("image/img/photo + 숫자", () => {
+    assert.equal(isPlaceholderAlt("image 1"), true);
+    assert.equal(isPlaceholderAlt("img_03"), true);
+    assert.equal(isPlaceholderAlt("photo-2"), true);
+    assert.equal(isPlaceholderAlt("Picture 10"), true);
+    assert.equal(isPlaceholderAlt("사진1"), true);
+    assert.equal(isPlaceholderAlt("이미지 3"), true);
+  });
+
+  it("문장이 이어지면 통과", () => {
+    assert.equal(isPlaceholderAlt("테스트하는 팀원들"), false);
+    assert.equal(isPlaceholderAlt("임시로 쓴 설명이 아닙니다"), false);
+    assert.equal(isPlaceholderAlt("image of the lobby"), false);
+    assert.equal(isPlaceholderAlt("사진 촬영 중인 관람객"), false);
   });
 });

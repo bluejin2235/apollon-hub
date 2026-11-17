@@ -7,7 +7,7 @@ import {
   INSIGHT_PROBLEM_FLAGS,
   INSIGHT_WARN_FLAGS
 } from "@/lib/website/checks";
-import { isPlaceholderAlt, isWeakEnglishAlt } from "@/lib/website/placeholder-alt";
+import { isPlaceholderAlt, isShortAlt, isWeakEnglishAlt } from "@/lib/website/placeholder-alt";
 import {
   formatSmallBodyImageTitle,
   formatSmallBodyImageWhere
@@ -26,7 +26,8 @@ export type InsightCheckItem = {
   flag:
     | (typeof INSIGHT_PROBLEM_FLAGS)[number]
     | (typeof INSIGHT_WARN_FLAGS)[number]
-    | "weak_english_alt";
+    | "weak_english_alt"
+    | "short_alt";
   kind: InsightCheckItemKind;
   tab: InsightEditorTab;
   title: string;
@@ -142,6 +143,18 @@ export function countWeakInsightEnglishAlts(
   return n;
 }
 
+/** 국문 대체 텍스트가 한 글자인 칸 수 (대표 + 본문). 공개는 막지 않는다 */
+export function countShortInsightAlts(insight: InsightDetail, keyAltKo?: string | null): number {
+  let n = 0;
+  if (isShortAlt(keyAltKo ?? asLoc(insight.key_image_alt).ko)) n += 1;
+  for (const block of orderedInsightBlocks(insight)) {
+    for (const image of block.insight_images ?? []) {
+      if (isShortAlt(asLoc(image.alt).ko)) n += 1;
+    }
+  }
+  return n;
+}
+
 function whereLine(tab: InsightEditorTab, detail: string) {
   return `${TAB_NAME[tab]} · ${detail}`;
 }
@@ -163,6 +176,7 @@ export function buildInsightCheckItems(
   const summaryKo = opts?.summaryKo ?? asLoc(insight.summary).ko;
   const keyAltKo = opts?.keyAltKo ?? asLoc(insight.key_image_alt).ko;
   const weakEnCount = countWeakInsightEnglishAlts(insight, opts?.keyAltEn);
+  const shortAltCount = countShortInsightAlts(insight, keyAltKo);
   const all: InsightCheckItem[] = [
     ...INSIGHT_PROBLEM_FLAGS.map((flag) => {
       let title = INSIGHT_CHECK_LABEL[flag];
@@ -243,6 +257,14 @@ export function buildInsightCheckItems(
         "영문을 채우거나, 영문 칸에 한글이 들어가지 않게 고쳐 주세요. 비어 있어도 공개할 수 있습니다"
       ),
       focusId: "insight-field-key-alt"
+    },
+    {
+      flag: "short_alt" as const,
+      kind: "warn" as const,
+      tab: "basic" as const,
+      title: `대체 텍스트가 한 글자입니다 ${shortAltCount}건`,
+      where: whereLine("basic", "무엇이 어디에 있는지 한 문장으로 쓰면 더 좋습니다. 그대로 공개할 수 있습니다"),
+      focusId: "insight-field-key-alt"
     }
   ];
   return all.filter((item) => {
@@ -257,6 +279,9 @@ export function buildInsightCheckItems(
     }
     if (item.flag === "weak_english_alt") {
       return weakEnCount > 0;
+    }
+    if (item.flag === "short_alt") {
+      return shortAltCount > 0;
     }
     if (item.flag === "body_image_too_small") return smallBody.length > 0;
     return flagOn(check, item.flag);
