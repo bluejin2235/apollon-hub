@@ -26,6 +26,7 @@ import {
   shouldAutoFillAlt,
   type AltSuggestStatus
 } from "@/lib/website/alt-suggest-client";
+import { shouldApplyAiAlt } from "@/lib/website/alt-suggest-apply";
 import { isPlaceholderAlt } from "@/lib/website/placeholder-alt";
 import { useFullSave } from "@/components/website/full-save-registry";
 import { AutoSaveLabel, PartialSaveBtn, type PartialSaveState } from "@/components/website/partial-save-btn";
@@ -457,31 +458,6 @@ export function WorkBasicTab({ draft, onChange, work, categories, siteUrl, onRel
     };
   }, [categories]);
 
-  const fillKeyAltFromAi = useCallback(
-    async (imageSrc: string, fileName: string | null, force: boolean) => {
-      const url = resolveImageUrlForAlt(siteUrl, imageSrc);
-      if (!url) {
-        setKeyAltAi("failed");
-        return;
-      }
-      const currentKo = draftRef.current.key_image_alt.ko;
-      if (!force && !shouldAutoFillAlt(currentKo)) return;
-      if (force && !confirmOverwriteAlt(!isPlaceholderAlt(currentKo))) return;
-      setKeyAltAi("loading");
-      const result = await requestAltSuggest({
-        imageUrl: url,
-        context: { ...buildKeyAltContext(), fileName }
-      });
-      if (!result) {
-        setKeyAltAi("failed");
-        return;
-      }
-      writeDraft({ key_image_alt: { ko: result.ko, en: result.en } });
-      setKeyAltAi("filled");
-    },
-    [siteUrl, buildKeyAltContext, writeDraft]
-  );
-
   const persistScreen = useCallback(async () => {
     const d = draftRef.current;
     const cat = await setWorkCategories(work.id, d.category_ids);
@@ -596,6 +572,44 @@ export function WorkBasicTab({ draft, onChange, work, categories, siteUrl, onRel
       searchAuto.markDirty();
     }
   }
+
+  const fillKeyAltFromAi = useCallback(
+    async (imageSrc: string, fileName: string | null, force: boolean) => {
+      const url = resolveImageUrlForAlt(siteUrl, imageSrc);
+      if (!url) {
+        setKeyAltAi("failed");
+        return;
+      }
+      const before = { ...draftRef.current.key_image_alt };
+      if (!force && !shouldAutoFillAlt(before.ko)) return;
+      if (force && !confirmOverwriteAlt(!isPlaceholderAlt(before.ko))) return;
+      setKeyAltAi("loading");
+      const result = await requestAltSuggest({
+        imageUrl: url,
+        context: { ...buildKeyAltContext(), fileName }
+      });
+      if (!result) {
+        setKeyAltAi("failed");
+        return;
+      }
+      const now = draftRef.current.key_image_alt;
+      if (
+        !shouldApplyAiAlt({
+          koBefore: before.ko,
+          enBefore: before.en,
+          koNow: now.ko,
+          enNow: now.en
+        })
+      ) {
+        setKeyAltAi("kept");
+        return;
+      }
+      writeDraft({ key_image_alt: { ko: result.ko, en: result.en } });
+      searchAuto.schedule();
+      setKeyAltAi("filled");
+    },
+    [siteUrl, buildKeyAltContext, writeDraft, searchAuto]
+  );
 
   async function fillSlugFromTitle(title: { ko: string; en: string }, opts?: { force?: boolean }) {
     if (!canAutoSlug) return;

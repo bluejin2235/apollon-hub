@@ -15,6 +15,7 @@ export function AltSuggestStatusLine({
     <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-slate-500">
       {status === "loading" ? <span>AI가 설명 쓰는 중…</span> : null}
       {status === "filled" ? <span>AI가 썼어요 · 확인해 주세요</span> : null}
+      {status === "kept" ? <span>직접 쓴 문장을 그대로 두었어요</span> : null}
       {status === "failed" ? (
         <span className="text-rose-600">자동 설명을 못 썼어요. 직접 써 주세요</span>
       ) : null}

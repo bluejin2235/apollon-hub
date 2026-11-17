@@ -17,6 +17,7 @@ import {
   shouldAutoFillAlt,
   type AltSuggestStatus
 } from "@/lib/website/alt-suggest-client";
+import { shouldApplyAiAlt } from "@/lib/website/alt-suggest-apply";
 import type { AltSuggestContext } from "@/lib/website/alt-suggest-types";
 import {
   clearPendingAlt,
@@ -920,17 +921,19 @@ function InsightImageRow({
         return;
       }
       if (!shouldAutoFillAlt(altRef.current.ko)) {
+        setAltAi("kept");
         clearPendingAlt(image.src);
         return;
       }
       altRef.current = pending;
       setAlt(pending);
+      onQueueImage(image.id, { alt: pending });
       setAltAi("filled");
       clearPendingAlt(image.src);
     }
     applyPending();
     return subscribePendingAlt(applyPending);
-  }, [image.src]);
+  }, [image.src, image.id, onQueueImage]);
 
   return (
     <div className="flex gap-3">
@@ -1000,7 +1003,8 @@ function InsightImageRow({
             onRewrite={() => {
               void (async () => {
                 if (!altContext) return;
-                if (!confirmOverwriteAlt(!isPlaceholderAlt(altRef.current.ko))) return;
+                const before = { ...altRef.current };
+                if (!confirmOverwriteAlt(!isPlaceholderAlt(before.ko))) return;
                 const url = resolveImageUrlForAlt(siteUrl, image.src);
                 if (!url) {
                   setAltAi("failed");
@@ -1015,8 +1019,21 @@ function InsightImageRow({
                   setAltAi("failed");
                   return;
                 }
+                const now = altRef.current;
+                if (
+                  !shouldApplyAiAlt({
+                    koBefore: before.ko,
+                    enBefore: before.en,
+                    koNow: now.ko,
+                    enNow: now.en
+                  })
+                ) {
+                  setAltAi("kept");
+                  return;
+                }
                 altRef.current = result;
                 setAlt(result);
+                onQueueImage(image.id, { alt: result });
                 setAltAi("filled");
               })();
             }}

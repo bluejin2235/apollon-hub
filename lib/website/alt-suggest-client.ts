@@ -5,7 +5,7 @@ import type { AltSuggestContext, AltSuggestResult } from "@/lib/website/alt-sugg
 
 export type { AltSuggestContext, AltSuggestResult };
 
-export type AltSuggestStatus = "idle" | "loading" | "filled" | "failed";
+export type AltSuggestStatus = "idle" | "loading" | "filled" | "failed" | "kept";
 
 type QueueItem = {
   run: () => Promise<void>;

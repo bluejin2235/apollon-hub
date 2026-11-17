@@ -10,6 +10,7 @@ import {
   shouldAutoFillAlt,
   type AltSuggestStatus
 } from "@/lib/website/alt-suggest-client";
+import { shouldApplyAiAlt } from "@/lib/website/alt-suggest-apply";
 import { isPlaceholderAlt } from "@/lib/website/placeholder-alt";
 import {
   InsightCropModal,
@@ -255,33 +256,6 @@ export function InsightBasicTab({ draft, onChange, insight, categories, siteUrl,
     };
   }, [categories]);
 
-  const fillKeyAltFromAi = useCallback(
-    async (imageSrc: string, fileName: string | null, force: boolean) => {
-      const url = resolveImageUrlForAlt(siteUrl, imageSrc);
-      if (!url) {
-        setKeyAltAi("failed");
-        return;
-      }
-      const currentKo = draftRef.current.key_image_alt.ko;
-      if (!force && !shouldAutoFillAlt(currentKo)) return;
-      if (force && !confirmOverwriteAlt(!isPlaceholderAlt(currentKo))) return;
-      setKeyAltAi("loading");
-      const result = await requestAltSuggest({
-        imageUrl: url,
-        context: { ...buildKeyAltContext(), fileName }
-      });
-      if (!result) {
-        setKeyAltAi("failed");
-        return;
-      }
-      const patch = { key_image_alt: { ko: result.ko, en: result.en } };
-      draftRef.current = { ...draftRef.current, ...patch };
-      onChange(patch);
-      setKeyAltAi("filled");
-    },
-    [siteUrl, buildKeyAltContext, onChange]
-  );
-
   const persistScreen = useCallback(async () => {
     const d = draftRef.current;
     const res = await updateInsight(insight.id, {
@@ -407,6 +381,44 @@ export function InsightBasicTab({ draft, onChange, insight, categories, siteUrl,
       searchAuto.markDirty();
     }
   }
+
+  const fillKeyAltFromAi = useCallback(
+    async (imageSrc: string, fileName: string | null, force: boolean) => {
+      const url = resolveImageUrlForAlt(siteUrl, imageSrc);
+      if (!url) {
+        setKeyAltAi("failed");
+        return;
+      }
+      const before = { ...draftRef.current.key_image_alt };
+      if (!force && !shouldAutoFillAlt(before.ko)) return;
+      if (force && !confirmOverwriteAlt(!isPlaceholderAlt(before.ko))) return;
+      setKeyAltAi("loading");
+      const result = await requestAltSuggest({
+        imageUrl: url,
+        context: { ...buildKeyAltContext(), fileName }
+      });
+      if (!result) {
+        setKeyAltAi("failed");
+        return;
+      }
+      const now = draftRef.current.key_image_alt;
+      if (
+        !shouldApplyAiAlt({
+          koBefore: before.ko,
+          enBefore: before.en,
+          koNow: now.ko,
+          enNow: now.en
+        })
+      ) {
+        setKeyAltAi("kept");
+        return;
+      }
+      writeDraft({ key_image_alt: { ko: result.ko, en: result.en } });
+      searchAuto.schedule();
+      setKeyAltAi("filled");
+    },
+    [siteUrl, buildKeyAltContext, searchAuto]
+  );
 
   async function fillSlugFromTitle(title: { ko: string; en: string }, opts?: { force?: boolean }) {
     if (!canAutoSlug) return;
