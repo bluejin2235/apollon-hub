@@ -14,13 +14,14 @@ import { LeadHtmlModal } from "@/components/website/lead-html-modal";
 import {
   requestAltSuggest,
   resolveImageUrlForAlt,
-  shouldAutoFillAlt,
   type AltSuggestStatus
 } from "@/lib/website/alt-suggest-client";
 import { shouldApplyAiAlt } from "@/lib/website/alt-suggest-apply";
 import type { AltSuggestContext } from "@/lib/website/alt-suggest-types";
 import {
+  beginPendingAlt,
   clearPendingAlt,
+  finishPendingAlt,
   getPendingAlt,
   setPendingAlt,
   subscribePendingAlt
@@ -824,15 +825,16 @@ function InsightImages({
     for (const file of files) {
       const url = resolveImageUrlForAlt(siteUrl, file.src);
       if (!url) {
-        setPendingAlt(file.src, "failed");
+        setPendingAlt(file.src, { status: "failed" });
         continue;
       }
-      setPendingAlt(file.src, "loading");
+      // 방금 올린 칸은 빈 대체 텍스트로 시작 — 요청 시점 값을 적용 직전 비교에 씀
+      beginPendingAlt(file.src, { ko: "", en: "" });
       void requestAltSuggest({
         imageUrl: url,
         context: { ...altContext, fileName: file.name }
       }).then((result) => {
-        setPendingAlt(file.src, result ?? "failed");
+        finishPendingAlt(file.src, result);
       });
     }
   }
@@ -911,23 +913,32 @@ function InsightImageRow({
     function applyPending() {
       const pending = getPendingAlt(image.src);
       if (!pending) return;
-      if (pending === "loading") {
+      if (pending.status === "loading") {
         setAltAi("loading");
         return;
       }
-      if (pending === "failed") {
+      if (pending.status === "failed") {
         setAltAi("failed");
         clearPendingAlt(image.src);
         return;
       }
-      if (!shouldAutoFillAlt(altRef.current.ko)) {
+      const now = altRef.current;
+      if (
+        !shouldApplyAiAlt({
+          koBefore: pending.koBefore,
+          enBefore: pending.enBefore,
+          koNow: now.ko,
+          enNow: now.en
+        })
+      ) {
         setAltAi("kept");
         clearPendingAlt(image.src);
         return;
       }
-      altRef.current = pending;
-      setAlt(pending);
-      onQueueImage(image.id, { alt: pending });
+      const next = { ko: pending.ko, en: pending.en };
+      altRef.current = next;
+      setAlt(next);
+      onQueueImage(image.id, { alt: next });
       setAltAi("filled");
       clearPendingAlt(image.src);
     }

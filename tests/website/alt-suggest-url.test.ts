@@ -4,6 +4,9 @@ import { describe, it } from "node:test";
 import {
   isAllowedWebsiteImageUrl,
   isRedirectStatus,
+  normalizePathname,
+  pathnameHasDotDot,
+  sanitizeWebsiteImagePathname,
   WEBSITE_STORAGE_HOST
 } from "../../lib/website/alt-suggest-url";
 import {
@@ -58,6 +61,28 @@ describe("isAllowedWebsiteImageUrl", () => {
         `https://${WEBSITE_STORAGE_HOST}/storage/v1/object/public/private/a.jpg`
       ),
       false
+    );
+  });
+
+  it("%2e%2e · %2E%2E · ..%2f 섞인 주소 막힘", () => {
+    const base = `https://${WEBSITE_STORAGE_HOST}/storage/v1/object/public/works`;
+    assert.equal(isAllowedWebsiteImageUrl(`${base}/%2e%2e%2fsecrets/x`), false);
+    assert.equal(isAllowedWebsiteImageUrl(`${base}/%2E%2E/secrets/x`), false);
+    assert.equal(isAllowedWebsiteImageUrl(`${base}/..%2fsecrets/x`), false);
+    assert.equal(
+      sanitizeWebsiteImagePathname(
+        "/storage/v1/object/public/works/%2e%2e%2fsecrets/x"
+      ),
+      null
+    );
+    assert.equal(pathnameHasDotDot("/storage/v1/object/public/works/../x"), true);
+    assert.equal(
+      normalizePathname("/storage/v1/object/public/works/foo/../a.jpg"),
+      "/storage/v1/object/public/works/a.jpg"
+    );
+    assert.notEqual(
+      normalizePathname("/storage/v1/object/public/works/./a.jpg"),
+      "/storage/v1/object/public/works/./a.jpg"
     );
   });
 });
@@ -115,6 +140,18 @@ describe("shouldApplyAiAlt", () => {
         enBefore: "old",
         koNow: "옛 문장",
         enNow: "changed"
+      }),
+      false
+    );
+  });
+
+  it("자동 채우기 대기 중 영문만 바뀌면 적용 안 함", () => {
+    assert.equal(
+      shouldApplyAiAlt({
+        koBefore: "",
+        enBefore: "",
+        koNow: "",
+        enNow: "English only while waiting"
       }),
       false
     );
