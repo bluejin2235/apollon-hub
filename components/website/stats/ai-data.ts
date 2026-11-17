@@ -40,6 +40,8 @@ export type BotsStatsPayload = {
     askedTotal: BotsCountPair;
     topPaths: BotsTopPath[];
     failed: BotsCountPair;
+    /** llms.txt 읽은 횟수. 홈페이지가 따로 주기 전 응답에는 없다 */
+    llmsTxt?: BotsCountPair;
   };
   searchEngines: {
     total: BotsCountPair;
@@ -59,12 +61,54 @@ export const AI_COMPANY_BARS = [
 
 export type AiCompanyBarName = (typeof AI_COMPANY_BARS)[number];
 
+function withoutPrevious(pair: BotsCountPair): BotsCountPair;
+function withoutPrevious(pair: BotsCountPair | undefined): BotsCountPair | undefined;
+function withoutPrevious(pair: BotsCountPair | undefined): BotsCountPair | undefined {
+  return pair ? { current: pair.current, previous: null } : pair;
+}
+
+function mapPairs(record: Record<string, BotsCountPair>): Record<string, BotsCountPair> {
+  return Object.fromEntries(
+    Object.entries(record).map(([key, pair]) => [key, withoutPrevious(pair)])
+  );
+}
+
+/**
+ * 앞 기간 시작이 로봇 기록 시작일(since) 앞이면 참.
+ * 기록이 없던 날을 0 으로 보고 견주지 않게 앞 기간 숫자를 모두 비운다(기획서 5장 「비교 불가」).
+ */
+export function botsPreviousBeforeSince(bundle: StatsBundle | null): boolean {
+  const result = bundle?.bots;
+  const since = result?.bots?.since?.trim();
+  const prevFrom = result?.prev_from?.trim();
+  return Boolean(since && prevFrom && prevFrom < since);
+}
+
 export function readBotsPayload(bundle: StatsBundle | null): BotsStatsPayload | null {
   const result = bundle?.bots;
-  const payload = result?.bots;
+  const payload = result?.bots as BotsStatsPayload | undefined;
   if (!payload || typeof payload !== "object") return null;
   if (!payload.ai || !payload.searchEngines) return null;
-  return payload;
+  if (!botsPreviousBeforeSince(bundle)) return payload;
+  const { ai, searchEngines } = payload;
+  return {
+    ...payload,
+    ai: {
+      ...ai,
+      total: withoutPrevious(ai.total),
+      byCompany: mapPairs(ai.byCompany ?? {}),
+      byPurpose: mapPairs(ai.byPurpose ?? {}),
+      askedTotal: withoutPrevious(ai.askedTotal),
+      topPaths: (ai.topPaths ?? []).map((row) => ({ ...row, count: withoutPrevious(row.count) })),
+      failed: withoutPrevious(ai.failed),
+      llmsTxt: withoutPrevious(ai.llmsTxt)
+    },
+    searchEngines: {
+      ...searchEngines,
+      total: withoutPrevious(searchEngines.total),
+      byName: mapPairs(searchEngines.byName ?? {})
+    }
+  };
 }
 
 function pairCurrent(pair: BotsCountPair | undefined): number {
@@ -96,11 +140,15 @@ export function buildAiCompanyBars(
   return AI_COMPANY_BARS.map((name) => ({ name, value: totals[name] }));
 }
 
-export function countDelta(pair: BotsCountPair | undefined): DeltaView {
-  if (!pair) return makeCountDelta(null, null, true, null);
+/** 개수 증감. 실패처럼 적을수록 좋은 숫자는 higherIsBetter=false */
+export function countDelta(
+  pair: BotsCountPair | undefined,
+  higherIsBetter = true
+): DeltaView {
+  if (!pair) return makeCountDelta(null, null, higherIsBetter, null);
   const current = pairCurrent(pair);
   const previous = typeof pair.previous === "number" ? pair.previous : null;
-  return makeCountDelta(current, previous, true, intText(previous));
+  return makeCountDelta(current, previous, higherIsBetter, intText(previous));
 }
 
 /** 목적별 막대 — 기획서 학습용 · 검색용 · 물어봐서 */
@@ -126,8 +174,10 @@ export const LLMS_TXT_PATH = "/llms.txt";
 export type AiTopContentRow = {
   path: string;
   title: string;
-  langLabel: "국문" | "영문";
-  count: number;
+  /** llms.txt 는 파일이라 「—」 */
+  langLabel: "국문" | "영문" | "—";
+  /** 숫자를 알 수 없으면 null, 화면은 「—」 */
+  count: number | null;
   delta: DeltaView;
   /** llms.txt 고정 줄 */
   fixed?: boolean;
@@ -140,7 +190,9 @@ function isLlmsTxtPath(path: string): boolean {
 
 /**
  * 많이 읽은 페이지 10 + llms.txt 고정 한 줄.
- * llms.txt 가 상위 10에 있으면 목록에서는 빼고 고정 줄에만 둔다.
+ * llms.txt 숫자는 홈페이지가 따로 주는 ai.llmsTxt 가 먼저다.
+ * 없으면 상위 목록에서 찾고, 목록에도 없으면 알 수 없어 null(「—」). 0 으로 두지 않는다.
+ * 상위 목록에서는 llms.txt 를 빼고 받은 만큼 10줄까지 채운다.
  */
 export function buildAiTopContents(
   payload: BotsStatsPayload | null,
@@ -148,12 +200,12 @@ export function buildAiTopContents(
 ): { rows: AiTopContentRow[]; llms: AiTopContentRow } {
   const paths = payload?.ai.topPaths ?? [];
   const llmsHit = paths.find((row) => isLlmsTxtPath(row.path));
-  const llmsPair = llmsHit?.count;
+  const llmsPair = payload?.ai.llmsTxt ?? llmsHit?.count;
   const llms: AiTopContentRow = {
     path: LLMS_TXT_PATH,
     title: "llms.txt",
-    langLabel: "국문",
-    count: pairCurrent(llmsPair),
+    langLabel: "—",
+    count: llmsPair ? pairCurrent(llmsPair) : null,
     delta: countDelta(llmsPair),
     fixed: true
   };

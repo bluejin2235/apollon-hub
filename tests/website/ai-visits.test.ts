@@ -161,4 +161,18 @@ describe("buildAiVisitPages", () => {
     const rows = buildAiVisitPages(readAiVisits(bundleOf(current, previousFull, true)), EMPTY_TITLES);
     assert.ok(rows.every((row) => row.delta.delta === null));
   });
+
+  it("받은 만큼 보여 주되 최대 10줄", () => {
+    const many: Period = {
+      ...current,
+      top_pages: Array.from({ length: 12 }, (_, i) => ({
+        path: `/works/p${i}`,
+        lang: "ko" as const,
+        sessions: 20 - i
+      }))
+    };
+    assert.equal(buildAiVisitPages(readAiVisits(bundleOf(many, previousFull)), EMPTY_TITLES).length, 10);
+    const seven: Period = { ...many, top_pages: many.top_pages.slice(0, 7) };
+    assert.equal(buildAiVisitPages(readAiVisits(bundleOf(seven, previousFull)), EMPTY_TITLES).length, 7);
+  });
 });

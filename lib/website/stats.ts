@@ -94,6 +94,8 @@ export type StatsQueryResult = {
         count: { current: number; previous: number | null };
       }[];
       failed: { current: number; previous: number | null };
+      /** llms.txt 읽은 횟수. 홈페이지가 따로 주기 전 응답에는 없다 */
+      llmsTxt?: { current: number; previous: number | null };
     };
     searchEngines: {
       total: { current: number; previous: number | null };

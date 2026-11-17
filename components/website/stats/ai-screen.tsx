@@ -79,7 +79,7 @@ function ReadSlot({ data, titles }: { data: StatsData; titles: TitleMap }) {
   const top = useMemo(() => buildAiTopContents(payload, titles), [payload, titles]);
   const totalDelta = countDelta(payload?.ai.total);
   const askedDelta = countDelta(payload?.ai.askedTotal);
-  const failedDelta = countDelta(payload?.ai.failed);
+  const failedDelta = countDelta(payload?.ai.failed, false);
   const searchTotal = payload?.searchEngines.total.current ?? 0;
   const failedCount = payload?.ai.failed.current ?? 0;
   const askedCount = payload?.ai.askedTotal.current ?? 0;
@@ -219,7 +219,7 @@ function ReadSlot({ data, titles }: { data: StatsData; titles: TitleMap }) {
                         <div className="ws-t2">{top.llms.path}</div>
                       </td>
                       <td>{top.llms.langLabel}</td>
-                      <td className="ws-num">{intText(top.llms.count)}</td>
+                      <td className="ws-num">{dash(intText(top.llms.count))}</td>
                       <td className="ws-num">
                         {top.llms.delta.delta == null ? (
                           <span className="ws-stamp">비교 불가</span>
@@ -301,7 +301,7 @@ function VisitSlot({ data, titles }: { data: StatsData; titles: TitleMap }) {
         <p className="ws-kpi-sub">불러오지 못했습니다</p>
       ) : (
         <>
-          <div className="ws-ct">AI 에서 온 방문</div>
+          <div className="ws-ct">AI에서 온 방문</div>
           <div className="ws-val">
             {dash(intText(summary.total))}
             <span className="ws-val-unit">회</span>
