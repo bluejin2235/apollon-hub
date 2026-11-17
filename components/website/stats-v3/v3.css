@@ -526,6 +526,17 @@
   border-top: 1.5px dashed #a2aab5;
 }
 
+.v3-chart-empty {
+  height: 200px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #9ca2ab;
+  font-size: 18px;
+  background: #fafbfc;
+  border-radius: 7px;
+}
+
 .v3-period-legend {
   justify-content: flex-end;
   margin-top: 5px;
