@@ -10,6 +10,7 @@ import { useEffect, useMemo, useState, type ComponentType, type ReactNode } from
 import { useStatsActionsLoader } from "@/components/website/stats/stats-actions";
 import { readActualRange } from "@/components/website/stats/stats-data";
 import type { LoadStatus } from "@/components/website/stats/stats-slot";
+import { V3Ai } from "@/components/website/stats-v3/v3-ai";
 import { useV3Catalog } from "@/components/website/stats-v3/v3-catalog";
 import { V3Content } from "@/components/website/stats-v3/v3-content";
 import { V3Live } from "@/components/website/stats-v3/v3-live";
@@ -35,7 +36,8 @@ import { PERIOD_PRESETS, type PeriodPresetId, type StatsBundle, type StatsSyncSt
 export const V3_SCREEN_PARTS: Partial<Record<V3ScreenId, ComponentType<V3ScreenProps>>> = {
   overview: V3Overview,
   content: V3Content,
-  search: V3Search
+  search: V3Search,
+  ai: V3Ai
 };
 
 function SyncLine({ status }: { status: StatsSyncStatus | null }) {
