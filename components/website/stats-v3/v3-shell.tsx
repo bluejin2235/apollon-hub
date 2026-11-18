@@ -327,12 +327,14 @@ export function V3Shell({ screen }: { screen: V3ScreenId }) {
     [extrasFrom, extrasTo, extrasPrevFrom, extrasPrevTo, extrasLaunch]
   );
   const extras = useV3Extras(screen === "ai", extrasRange, status === "error");
-  const markRange = apiRange
-    ? { from: apiRange.actualFrom, to: apiRange.actualTo }
+  // 조치 기록도 옛 기간 응답의 실제 기간으로 받지 않는다. 새 응답 전에는 고른 날짜를 쓴다
+  const markApi = bundleFresh ? apiRange : null;
+  const markRange = markApi
+    ? { from: markApi.actualFrom, to: markApi.actualTo }
     : from && to && from <= to
       ? { from, to }
       : null;
-  const actions = useStatsActionsLoader(today, bundle, markRange);
+  const actions = useStatsActionsLoader(today, bundleFresh ? bundle : null, markRange);
   const Screen = V3_SCREEN_PARTS[screen];
 
   function applyPreset(next: PeriodPresetId) {
@@ -346,6 +348,11 @@ export function V3Shell({ screen }: { screen: V3ScreenId }) {
   // 맨 위 비교 줄 · 옛 사이트 알림: 지금 고른 기간의 응답이 왔을 때만 응답의 실제 기간을 쓴다.
   // 기간을 바꾼 직후(옛 응답)에는 고른 날짜로 계산해 옛 기간 글이 남지 않게 한다
   const headRange = bundleFresh ? apiRange : null;
+  // 화면 본문(요약 · 콘텐츠 · 검색 · AI · 방문 패턴)은 지금 고른 기간의 응답이 왔을 때만 응답을 받는다.
+  // 그 전에는 응답 없이(null) 「불러오는 중」으로 그려, 옛 기간 응답에서 나온 글이 한 줄도 남지 않게 한다.
+  // 머리(기간 고르기 · 비교 줄)만 늘 보인다. 실패면 「불러오지 못함」 그대로
+  const screenBundle = bundleFresh ? bundle : null;
+  const screenStatus: LoadStatus = bundleFresh ? status : status === "error" ? "error" : "loading";
 
   return (
     <V3Frame
@@ -366,7 +373,17 @@ export function V3Shell({ screen }: { screen: V3ScreenId }) {
       }
     >
       {Screen ? (
-        <Screen bundle={bundle} status={status} fresh={bundleFresh} from={from} to={to} today={today} catalog={catalog} actions={actions} extras={extras} />
+        <Screen
+          bundle={screenBundle}
+          status={screenStatus}
+          fresh={bundleFresh}
+          from={from}
+          to={to}
+          today={today}
+          catalog={catalog}
+          actions={actions}
+          extras={extras}
+        />
       ) : null}
     </V3Frame>
   );
