@@ -327,11 +327,14 @@ function MemoBox({
   const [memo, setMemo] = useState(saved);
   // 목록 행으로 먼저 열면 저장 메모가 상세로 늦게 온다. 받기 전에는 칸과 저장을 잠그고, 받으면 저장 메모로 채운다
   // (빈 칸이나 옛 값을 보고 기존 메모를 덮어쓰지 않게, 코덱스 12·13차)
-  const isReady = ready === "ready";
-  useEffect(() => {
-    if (isReady) setMemo(item.memo ?? "");
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- 받은 순간에 한 번만 채운다
-  }, [isReady]);
+  // 처음 받은 순간 한 번만, 그리는 도중에 채운다(잠금이 풀린 화면이 빈 칸으로 먼저 보이지 않게, 코덱스 14차).
+  // 같은 문의를 다시 눌러도 쓰던 글은 그대로 둔다.
+  const [filled, setFilled] = useState(ready === "ready");
+  if (ready === "ready" && !filled) {
+    setFilled(true);
+    setMemo(saved);
+  }
+  const isReady = ready === "ready" && filled;
   const [saving, setSaving] = useState(false);
   const [query, setQuery] = useState<string | null>(null);
   const [active, setActive] = useState(0);
