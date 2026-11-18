@@ -5,6 +5,7 @@ import {
   countMentionTokens,
   customerTextOf,
   findInquiryFile,
+  applyInquiryToList,
   inquiryDownloadUrl,
   inquiryListView,
   inquirySummaryText,
@@ -282,5 +283,23 @@ describe("문의 목록 · 요약 · 사람 목록 상태", () => {
     assert.equal(mentionPickerText("ready", 3, 0), "맞는 사람이 없습니다");
     assert.equal(mentionPickerText("ready", 3, 2), null);
     assert.equal(mentionPickerText("error", 0, 0), "사람 목록을 불러오지 못했습니다");
+  });
+});
+
+describe("applyInquiryToList", () => {
+  it("읽음 저장이 되면 목록 줄 표시와 안 읽은 수를 바로 바꾼다(새로 고침 실패와 상관없이)", () => {
+    const list = {
+      items: [row({ id: "a1", is_read: false }), row({ id: "b2", is_read: true })],
+      summary: { unread: 3, thisMonth: 5, pending: 2 }
+    };
+    const after = applyInquiryToList(list, row({ id: "a1", is_read: true }));
+    assert.equal(after?.items[0].is_read, true);
+    assert.equal(after?.summary.unread, 2);
+    assert.equal(after?.summary.thisMonth, 5);
+    // 이미 읽은 줄을 다시 저장하면 수는 그대로
+    assert.equal(applyInquiryToList(after, row({ id: "a1", is_read: true }))?.summary.unread, 2);
+    // 목록에 없는 문의 · 목록이 없으면 그대로
+    assert.equal(applyInquiryToList(list, row({ id: "zz", is_read: true })), list);
+    assert.equal(applyInquiryToList(null, row()), null);
   });
 });

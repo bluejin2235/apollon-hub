@@ -2,7 +2,7 @@
 
 import type { StatsActionsState } from "@/components/website/stats/stats-actions";
 import type { LoadStatus } from "@/components/website/stats/stats-slot";
-import type { V3Catalog } from "@/components/website/stats-v3/v3-catalog";
+import type { CatalogState, V3Catalog } from "@/components/website/stats-v3/v3-catalog";
 import type { V3AiDays } from "@/components/website/stats-v3/v3-ai-days";
 import type { AiAnswerSummary, StatsBundle } from "@/lib/website/stats";
 
@@ -32,6 +32,8 @@ export type V3ScreenProps = {
   to: string;
   today: string;
   catalog: V3Catalog | null;
+  /** 글 목록 상태(불러오는 중 · 준비 · 실패). 「새 글」 판정은 준비됐을 때만 */
+  catalogState: CatalogState;
   actions: StatsActionsState;
   extras: V3Extras;
 };

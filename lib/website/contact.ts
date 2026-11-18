@@ -251,6 +251,26 @@ export function inquiryDownloadUrl(url: string, name: string): string | null {
   return parsed.toString();
 }
 
+/**
+ * 저장이 끝난 문의 한 줄을 지금 목록에 바로 반영한다(새로 고침이 실패해도 목록이 옛 표시로 남지 않게).
+ * 줄의 읽음 · 답장 표시를 바꾸고, 안 읽음이 읽음으로(또는 반대로) 바뀌었으면 「안 읽은 문의」 수도 맞춘다.
+ * 목록에 없는 문의면 목록을 그대로 돌려준다.
+ */
+export function applyInquiryToList(list: InquiryList | null, row: InquiryItem): InquiryList | null {
+  if (!list) return list;
+  const at = list.items.findIndex((item) => item.id === row.id);
+  if (at < 0) return list;
+  const before = list.items[at];
+  const after = { ...before, ...row };
+  const items = list.items.slice();
+  items[at] = after;
+  const unreadChange = (before.is_read ? 0 : 1) - (after.is_read ? 0 : 1);
+  return {
+    items,
+    summary: { ...list.summary, unread: Math.max(0, list.summary.unread - unreadChange) }
+  };
+}
+
 /** 목록 · 사람 목록처럼 받아 오는 자료의 상태. 길이로 짐작하지 않는다(빈 목록도 받은 것) */
 export type LoadState = "loading" | "ready" | "error";
 

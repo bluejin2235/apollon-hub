@@ -130,6 +130,23 @@ export function contentKindOf(page: Pick<ContentPage, "typeId">): ContentKind {
   return "메뉴 페이지";
 }
 
+/**
+ * 표 「앞 기간보다」 칸에 무엇을 쓰나.
+ * 새 글인지는 글 목록(catalog)으로 가린다. 목록이 오기 전이면 loading, 실패면 unknown(새 글인지 모름)이고,
+ * 이때 증감을 낼 수 없는 워크 · 인사이트 글에 「비교 불가」라고 단정하지 않는다.
+ * 메뉴 페이지는 새 글 판정과 상관없어 늘 증감(delta)이다.
+ */
+export function newPostCell(
+  row: Pick<ContentRow, "isNew" | "kind" | "delta">,
+  catalogState: "loading" | "ready" | "error"
+): "new" | "delta" | "loading" | "unknown" {
+  if (row.kind === "메뉴 페이지") return "delta";
+  if (catalogState === "ready") return row.isNew ? "new" : "delta";
+  // 목록 없이도 증감이 나오는 글은 증감을 쓴다. 증감이 없을 때만 새 글일 수 있다
+  if (row.delta.views.delta != null) return "delta";
+  return catalogState === "loading" ? "loading" : "unknown";
+}
+
 /** 검색 · AI · 직접 방문 · 기타 (0~100, 합 100) */
 export type SourceShare = [number, number, number, number];
 

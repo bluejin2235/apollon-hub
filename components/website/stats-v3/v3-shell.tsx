@@ -295,7 +295,7 @@ export function V3Shell({ screen }: { screen: V3ScreenId }) {
   const [status, setStatus] = useState<LoadStatus>("loading");
   const config = V3_SCREENS.find((item) => item.id === screen);
   const kinds = config?.kinds;
-  const catalog = useV3Catalog(V3_NEEDS_CATALOG.includes(screen));
+  const { catalog, state: catalogState } = useV3Catalog(V3_NEEDS_CATALOG.includes(screen));
   /**
    * 날짜를 고칠 때마다 1씩 오르는 번호. 요청은 보낸 때의 번호를 달고, 응답(bundleSeq)이 지금 번호와 같을 때만 「지금 기간의 응답」이다.
    * 날짜를 지웠다가 같은 날짜로 되돌려도 번호가 달라서 옛 응답을 다시 쓰지 않는다(새 요청의 응답을 기다린다)
@@ -437,6 +437,7 @@ export function V3Shell({ screen }: { screen: V3ScreenId }) {
             to={to}
             today={today}
             catalog={catalog}
+            catalogState={catalogState}
             actions={actions}
             extras={extras}
           />

@@ -10,6 +10,7 @@ import {
   contentRows,
   filterAndSort,
   isPreviewPath,
+  newPostCell,
   pageDaySeries,
   roundShares,
   sourceShares
@@ -196,5 +197,29 @@ describe("v3 콘텐츠 표", () => {
     assert.deepEqual(series.dates, ["2026-11-12", "2026-11-13"]);
     assert.deepEqual(series.current, [12, 0]);
     assert.deepEqual(series.previous, [0, 20]);
+  });
+});
+
+describe("앞 기간보다 칸: 새 글 판정은 글 목록이 준비됐을 때만", () => {
+  const none = { delta: null, tone: "flat" as const, previous: null };
+  const some = { delta: "+2", tone: "up" as const, previous: "3회" };
+  const cell = (kind: "워크" | "인사이트" | "메뉴 페이지", isNew: boolean, views: typeof none | typeof some) => ({
+    kind,
+    isNew,
+    delta: { views, entries: none, bounce: none }
+  });
+
+  it("목록 준비: 새 글이면 「새 글」, 아니면 증감", () => {
+    assert.equal(newPostCell(cell("워크", true, none), "ready"), "new");
+    assert.equal(newPostCell(cell("워크", false, none), "ready"), "delta");
+  });
+
+  it("목록을 불러오는 중 · 실패면 증감이 없는 글에 「비교 불가」라고 단정하지 않는다", () => {
+    assert.equal(newPostCell(cell("인사이트", false, none), "loading"), "loading");
+    assert.equal(newPostCell(cell("인사이트", false, none), "error"), "unknown");
+    // 증감이 나오는 글(앞 기간에도 있던 글)은 목록과 상관없이 증감
+    assert.equal(newPostCell(cell("워크", false, some), "loading"), "delta");
+    // 메뉴 페이지는 새 글 판정과 상관없다
+    assert.equal(newPostCell(cell("메뉴 페이지", false, none), "error"), "delta");
   });
 });

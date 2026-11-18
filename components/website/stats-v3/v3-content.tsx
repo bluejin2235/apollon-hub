@@ -15,6 +15,7 @@ import {
   contentMoves,
   contentRows,
   filterAndSort,
+  newPostCell,
   pageDaySeries,
   type ContentRow,
   type KindFilter,
@@ -137,7 +138,33 @@ function Detail({ row, bundle, year }: { row: ContentRow; bundle: StatsBundle | 
   );
 }
 
-function ContentTable({ rows, bundle, year }: { rows: ContentRow[]; bundle: StatsBundle | null; year: number }) {
+/** 「앞 기간보다」 칸: 새 글 · 증감 · 글 목록을 불러오는 중 · 글 목록을 못 받아 모름 */
+function NewOrChange({ row, catalogState }: { row: ContentRow; catalogState: V3ScreenProps["catalogState"] }) {
+  const cell = newPostCell(row, catalogState);
+  if (cell === "new") return <Badge>새 글</Badge>;
+  if (cell === "loading") return <span className="v3-muted">불러오는 중</span>;
+  if (cell === "unknown") {
+    // 글 목록을 받지 못해 새 글인지 알 수 없다. 「비교 불가」라고 단정하지 않는다
+    return (
+      <span className="v3-muted" title="글 목록을 받지 못해 새 글인지 알 수 없어요">
+        —
+      </span>
+    );
+  }
+  return <Change delta={row.delta.views} />;
+}
+
+function ContentTable({
+  rows,
+  bundle,
+  year,
+  catalogState
+}: {
+  rows: ContentRow[];
+  bundle: StatsBundle | null;
+  year: number;
+  catalogState: V3ScreenProps["catalogState"];
+}) {
   const [kind, setKind] = useState<KindFilter>("전체");
   const [locale, setLocale] = useState<LocaleFilter>(null);
   const [sortKey, setSortKey] = useState<SortKey>("views");
@@ -260,7 +287,9 @@ function ContentTable({ rows, bundle, year }: { rows: ContentRow[]; bundle: Stat
                       )}
                     </td>
                     <td className="v3-num">{row.bounce == null ? "—" : `${pctNumber(row.bounce)}%`}</td>
-                    <td className="v3-num">{row.isNew ? <Badge>새 글</Badge> : <Change delta={row.delta.views} />}</td>
+                    <td className="v3-num">
+                      <NewOrChange row={row} catalogState={catalogState} />
+                    </td>
                   </tr>
                   {isOpen ? <Detail row={row} bundle={bundle} year={year} /> : null}
                 </Fragment>
@@ -304,7 +333,7 @@ function Moves({ title, rows, empty }: { title: string; rows: MoveRow[]; empty: 
   );
 }
 
-export function V3Content({ bundle, status, from, to, today, catalog }: V3ScreenProps) {
+export function V3Content({ bundle, status, from, to, today, catalog, catalogState }: V3ScreenProps) {
   const year = Number(today.slice(0, 4));
   const cards = useMemo(() => contentCards(bundle), [bundle]);
   const rows = useMemo(() => contentRows(bundle, catalog, from, to), [bundle, catalog, from, to]);
@@ -341,7 +370,7 @@ export function V3Content({ bundle, status, from, to, today, catalog }: V3Screen
           <h2>많이 본 페이지</h2>
           <span className="v3-tiny">표 위 「연 횟수」 같은 제목을 누르면 순서가 바뀌어요</span>
         </div>
-        {status === "ready" ? <ContentTable rows={rows} bundle={bundle} year={year} /> : <StatusLine status={status} />}
+        {status === "ready" ? <ContentTable rows={rows} bundle={bundle} year={year} catalogState={catalogState} /> : <StatusLine status={status} />}
       </div>
       <div className="v3-two">
         <Moves title="앞 기간보다 많이 본 페이지" rows={moves.up} empty={compareEmpty} />

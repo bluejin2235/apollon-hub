@@ -27,6 +27,7 @@ import {
   customerTextOf,
   fileSizeLabel,
   findInquiryFile,
+  applyInquiryToList,
   inquiryDownloadUrl,
   inquiryListView,
   inquirySummaryText,
@@ -625,6 +626,10 @@ function InboxTab() {
   const [selected, setSelected] = useState<InquiryItem | null>(null);
   /** 지금 검색 · 거르기 조건의 목록 상태 */
   const [listState, setListState] = useState<LoadState>("loading");
+  /** 목록을 보이고 있는데 새로 고침이 실패했나. 알림 한 번(toast)으로 끝내지 않고 목록 위에 남긴다 */
+  const [refreshFailed, setRefreshFailed] = useState(false);
+  /** 지금 조건의 목록을 받아 보이고 있나(새로 고침 실패 때 목록을 둘지 가른다) */
+  const listShown = useRef(false);
   /** 목록 요청 번호. 늦게 온 옛 요청의 응답이 최신 결과를 덮지 않게 마지막 번호의 응답만 쓴다 */
   const listSeq = useRef(0);
   /**
@@ -646,6 +651,7 @@ function InboxTab() {
     async (fresh = false) => {
       const seq = ++listSeq.current;
       if (fresh) {
+        listShown.current = false;
         setData(null);
         setListState("loading");
       }
@@ -659,8 +665,10 @@ function InboxTab() {
       if (seq !== listSeq.current) return;
       if (result.ok) {
         const list = result.data;
+        listShown.current = true;
         setData(list);
         setListState("ready");
+        setRefreshFailed(false);
         setSelected((current) => {
           if (!current) return current;
           const row = list.items.find((item) => item.id === current.id);
@@ -669,9 +677,14 @@ function InboxTab() {
         return;
       }
       showToast({ message: "문의를 불러오지 못했습니다", tone: "error" });
-      // 새로 고침이 실패하면 보이던 목록은 둔다. 조건을 바꾼 뒤의 실패면 실패로 보인다
-      if (fresh) setListState("error");
-      else setListState((state) => (state === "ready" ? state : "error"));
+      // 새로 고침이 실패하면 보이던 목록은 두고 목록 위에 알림을 남긴다. 조건을 바꾼 뒤의 실패면 실패로 보인다
+      if (fresh) {
+        setRefreshFailed(false);
+        setListState("error");
+      } else {
+        if (listShown.current) setRefreshFailed(true);
+        else setListState("error");
+      }
     },
     []
   );
@@ -729,6 +742,8 @@ function InboxTab() {
       const marked = await updateInquiry(id, { is_read: true }, controller.signal);
       if (!isCurrent() || !marked.ok) return;
       applyIfOpen(marked.data);
+      // 읽음 저장이 됐으면 목록의 읽음 표시 · 안 읽은 수를 바로 바꾼다. 아래 새로 고침이 실패해도 옛 표시로 남지 않게
+      setData((list) => applyInquiryToList(list, marked.data));
       await load();
     },
     [load, applyIfOpen]
@@ -821,6 +836,7 @@ function InboxTab() {
               membersState={membersState}
               onChanged={(row) => {
                 applyIfOpen(row);
+                setData((list) => applyInquiryToList(list, row));
                 void load();
               }}
               onClose={closeDetail}
@@ -833,6 +849,18 @@ function InboxTab() {
         </div>
 
         <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+          {listView === "items" && refreshFailed ? (
+            <div className="flex items-center justify-between gap-3 border-b border-amber-200 bg-amber-50 px-4 py-2 text-xs text-amber-800" role="status">
+              <span>목록을 새로 받지 못했습니다. 보이는 목록은 조금 전 것일 수 있어요.</span>
+              <button
+                type="button"
+                className="shrink-0 rounded-md border border-amber-300 bg-white px-2 py-1 text-amber-800 hover:bg-amber-100"
+                onClick={() => void load()}
+              >
+                다시 불러오기
+              </button>
+            </div>
+          ) : null}
           {listView === "items" ? (
             <ul>
               {items.map((row) => {
