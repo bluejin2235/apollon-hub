@@ -698,6 +698,8 @@ function InboxTab() {
   const [data, setData] = useState<InquiryList | null>(null);
   const [selected, setSelected] = useState<InquiryItem | null>(null);
   const [detailState, setDetailState] = useState<{ id: string; state: DetailState } | null>(null);
+  const detailStateRef = useRef(detailState);
+  detailStateRef.current = detailState;
   /** 지금 검색 · 거르기 조건의 목록 상태 */
   const [listState, setListState] = useState<LoadState>("loading");
   /** 목록을 보이고 있는데 새로 고침이 실패했나. 알림 한 번(toast)으로 끝내지 않고 목록 위에 남긴다 */
@@ -750,7 +752,9 @@ function InboxTab() {
         });
         // 열린 문의가 지금 조건의 목록에서 빠졌으면(남이 처리 상태를 바꾼 경우 등) 상세를 다시 받아 상태를 맞춘다(코덱스 23차)
         const openId = openIdRef.current;
-        if (openId && !list.items.some((item) => item.id === openId)) {
+        // 상세를 못 받아 메모가 잠긴 문의도 다시 받는다(코덱스 25차)
+        const openFailed = detailStateRef.current?.id === openId && detailStateRef.current.state === "failed";
+        if (openId && (openFailed || !list.items.some((item) => item.id === openId))) {
           void getInquiry(openId).then(
             (detail) => {
               if (!detail.ok || openIdRef.current !== openId) return;
@@ -821,7 +825,8 @@ function InboxTab() {
       const detail = await getInquiry(id, controller.signal);
       if (!isCurrent()) return;
       if (!detail.ok) {
-        setDetailState({ id, state: "failed" });
+        // 다른 경로로 이미 받았으면 늦은 실패가 잠그지 않는다
+        setDetailState((current) => (current && current.id === id && current.state === "ready" ? current : { id, state: "failed" }));
         if (!fallback) {
           showToast({ message: "링크의 문의를 찾지 못했습니다", tone: "error" });
           syncUrlId(null);
