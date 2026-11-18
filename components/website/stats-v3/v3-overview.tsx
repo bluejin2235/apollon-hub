@@ -298,7 +298,8 @@ function Records({ bundle, actions, from, to, today }: Pick<V3ScreenProps, "bund
 export function V3Overview(props: V3ScreenProps) {
   const { bundle, status, fresh, from, to } = props;
   const cards = useMemo(() => overviewCards(bundle), [bundle]);
-  const answer = useMemo(() => overviewAnswer(bundle), [bundle]);
+  // 기간을 바꾼 뒤 새 응답이 오기 전에는 옛 응답으로 만든 답 문장(「방문자 숫자가 아직 없고」 등)을 그리지 않는다
+  const answer = useMemo(() => (fresh ? overviewAnswer(bundle) : null), [bundle, fresh]);
   const brief = useSummaryBrief({ bundle, status }, from, to);
 
   return (

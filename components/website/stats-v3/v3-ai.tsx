@@ -13,6 +13,7 @@ import { Fragment, useMemo, useState } from "react";
 import {
   botPrevReason,
   bucketRangeText,
+  prevBotCount,
   visitPrevReason,
   type AiDayBucket,
   type AiPrevSlot
@@ -132,10 +133,8 @@ function AiTrends({ bundle, extras, today }: Pick<V3ScreenProps, "bundle" | "ext
     return at >= 0 ? (days.previous?.[at] ?? null) : null;
   };
   const prevOf = (bucket: AiDayBucket): AiDayBucket | null => slotOf(bucket)?.bucket ?? null;
-  const prevCompany = (bucket: AiDayBucket, keys: string[]): number | null => {
-    const before = prevOf(bucket)?.botsByCompany;
-    return before ? keys.reduce((acc, key) => acc + (before[key] ?? 0), 0) : null;
-  };
+  // 값과 까닭이 늘 맞게 같은 판단(prevBotCount · botPrevReason)을 쓴다
+  const prevCompany = (bucket: AiDayBucket, keys: string[]): number | null => prevBotCount(slotOf(bucket), keys);
   const botSeries = [
     ...shown.map((key) => ({
       name: companyLabel(key, true),

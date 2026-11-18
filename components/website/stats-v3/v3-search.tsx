@@ -36,8 +36,12 @@ function countTick(value: number): string {
   return Number.isInteger(value) ? String(value) : value.toFixed(1);
 }
 
-/** 「구글 검색 숫자는 2~3일 늦게 들어와요. 지금은 11월 15일까지 있어요.」 */
-function lagText(bundle: StatsBundle | null, year: number): string {
+/**
+ * 「구글 검색 숫자는 2~3일 늦게 들어와요. 지금은 11월 15일까지 있어요.」
+ * 기간을 바꾼 뒤 새 응답이 오기 전(fresh=false)에는 옛 응답의 마지막 날을 쓰지 않는다
+ */
+function lagText(bundle: StatsBundle | null, year: number, fresh: boolean): string {
+  if (!fresh) return "구글 검색 숫자는 2~3일 늦게 들어와요.";
   const last = readGscLastDate(bundle);
   const range = readActualRange(bundle);
   if (!last) return "구글 검색 숫자는 2~3일 늦게 들어와요.";
@@ -100,7 +104,7 @@ function KeywordChangeCell({ change }: { change: KeywordChange }) {
   return <Change delta={change.delta} />;
 }
 
-function SearchTrends({ bundle, today }: { bundle: StatsBundle | null; today: string }) {
+function SearchTrends({ bundle, today, fresh }: { bundle: StatsBundle | null; today: string; fresh: boolean }) {
   const year = Number(today.slice(0, 4));
   const clicks = useMemo(() => gscDaySeries(bundle, "clicks"), [bundle]);
   const impressions = useMemo(() => gscDaySeries(bundle, "impressions"), [bundle]);
@@ -111,7 +115,7 @@ function SearchTrends({ bundle, today }: { bundle: StatsBundle | null; today: st
   const unfair = previousIsOldSite(bundle)
     ? `앞 기간(${range ? rangeText(range.prevFrom, range.prevTo, year) : "앞 기간"})은 새 홈페이지를 열기 전이라 견줄 수 없어요.`
     : null;
-  const lag = lagText(bundle, year);
+  const lag = lagText(bundle, year, fresh);
   const labels = (dates: string[]) => dates.map(axisLabel);
   const prevHeads = (dates: (string | null)[]) => dates.map((date) => (date ? axisLabel(date) : null));
 
@@ -377,7 +381,7 @@ export function V3Search({ bundle, status, fresh: bundleFresh, today, catalog }:
   const answer = useMemo(() => searchAnswer(bundle), [bundle]);
   const keywords = useMemo(() => targetKeywordsView(bundle, titlesOf(catalog)), [bundle, catalog]);
   const visitRange = readActualRange(bundle);
-  const lag = lagText(bundle, year);
+  const lag = lagText(bundle, year, bundleFresh);
   const launch = readLaunchDate(bundle) ?? SITE_LAUNCH_DATE;
 
   return (
@@ -396,7 +400,7 @@ export function V3Search({ bundle, status, fresh: bundleFresh, today, catalog }:
           )
         }
       />
-      {status === "ready" ? <SearchTrends bundle={bundle} today={today} /> : null}
+      {status === "ready" ? <SearchTrends bundle={bundle} today={today} fresh={bundleFresh} /> : null}
       <div className="v3-card">
         <div className="v3-card-head">
           <h2>어떤 말로 찾아오나요?</h2>

@@ -9,6 +9,7 @@ import {
   aiDayRanges,
   botPrevReason,
   bucketRangeText,
+  prevBotCount,
   prevDayRanges,
   prevSlotPlan,
   prevSlotsFrom,
@@ -560,7 +561,26 @@ describe("AI 날짜별 흐름: 같은 자리 앞 기간 칸", () => {
     // 시작일이 확인됐고 칸 끝(11월 7일)이 그보다 앞일 때만 「로봇 기록 시작 전」
     assert.equal(slots[1].bucket?.botsSince, "2026-11-09");
     assert.equal(botPrevReason(slots[1]), PREV_REASON.botsBefore);
+    assert.equal(prevBotCount(slots[1], ["OpenAI"]), null);
+    assert.equal(prevBotCount(slots[3], ["OpenAI"]), 3);
     assert.equal(visitPrevReason(slots[1]), null);
     assert.equal(visitPrevReason(slots[2]), PREV_REASON.failed);
+  });
+
+  it("앞 기간 로봇 칸은 있는데 기록 시작일(since)이 없으면 값은 null, 까닭은 「자료 없음」(빈 표를 0 으로 그리지 않음)", () => {
+    const ranges = aiDayRanges("2026-11-11", "2026-11-11");
+    const plan = prevSlotPlan(ranges, "2026-11-11", "2026-11-10", "2026-11-10", "2026-11-01");
+    const noSince = {
+      bots: { bots: { ai: { total: { current: 0 }, byCompany: {} } } }
+    } as unknown as StatsBundle;
+    const withEntries = {
+      bots: { bots: { ai: { total: { current: 5 }, byCompany: { OpenAI: { current: 5 } } } } }
+    } as unknown as StatsBundle;
+    for (const bundle of [noSince, withEntries]) {
+      const [slot] = prevSlotsFrom(plan, [{ status: "fulfilled", value: { ok: true, bundle } }]);
+      assert.equal(slot.bucket?.botsSince, null);
+      assert.equal(prevBotCount(slot, ["OpenAI"]), null);
+      assert.equal(botPrevReason(slot), PREV_REASON.noData);
+    }
   });
 });

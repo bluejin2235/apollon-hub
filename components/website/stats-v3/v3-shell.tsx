@@ -343,6 +343,10 @@ export function V3Shell({ screen }: { screen: V3ScreenId }) {
     setTo(range.to);
   }
 
+  // 맨 위 비교 줄 · 옛 사이트 알림: 지금 고른 기간의 응답이 왔을 때만 응답의 실제 기간을 쓴다.
+  // 기간을 바꾼 직후(옛 응답)에는 고른 날짜로 계산해 옛 기간 글이 남지 않게 한다
+  const headRange = bundleFresh ? apiRange : null;
+
   return (
     <V3Frame
       label={config?.label}
@@ -352,8 +356,8 @@ export function V3Shell({ screen }: { screen: V3ScreenId }) {
           from={from}
           to={to}
           today={today}
-          compareText={compareLine(preset, from, to, today, apiRange)}
-          showOldSite={apiRange?.prevIncludesPreLaunch ?? previousStartsBeforeLaunch(from, to)}
+          compareText={compareLine(preset, from, to, today, headRange)}
+          showOldSite={headRange?.prevIncludesPreLaunch ?? previousStartsBeforeLaunch(from, to)}
           syncStatus={syncStatus}
           onPreset={applyPreset}
           onFrom={setFrom}

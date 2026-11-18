@@ -110,15 +110,30 @@ export function prevSlotsFrom(
 /**
  * 로봇 그래프 점의 앞 기간 까닭.
  * 「로봇 기록 시작 전」은 응답이 확인해 준 시작일(botsSince)보다 칸 끝이 앞설 때만 쓴다.
- * 응답은 왔는데 로봇 칸이 없거나 시작일을 모르면 「자료 없음」.
+ * 응답은 왔는데 로봇 칸이 없거나 시작일을 모르면 「자료 없음」. 이때 값도 null 이다(prevBotCount).
  */
 export function botPrevReason(slot: AiPrevSlot | null | undefined): string | null {
   if (!slot) return PREV_REASON.loading;
   if (slot.reason) return slot.reason;
   const bucket = slot.bucket;
-  if (bucket?.botsByCompany) return null;
+  if (prevBotsUsable(bucket)) return null;
   if (bucket?.botsSince && bucket.to < bucket.botsSince) return PREV_REASON.botsBefore;
   return PREV_REASON.noData;
+}
+
+/** 앞 기간 칸의 로봇 값을 견줄 수 있나: 로봇 칸이 있고, 응답이 기록 시작일(botsSince)을 확인해 줬을 때만 */
+function prevBotsUsable(bucket: AiDayBucket | null | undefined): bucket is AiDayBucket & { botsByCompany: Record<string, number> } {
+  return Boolean(bucket?.botsByCompany && bucket.botsSince);
+}
+
+/**
+ * 앞 기간 칸에서 회사들(keys)의 로봇 횟수 합. 견줄 수 없으면 null: 마우스 상자의 까닭(botPrevReason)과 늘 맞는다.
+ * 시작일을 모르는 응답에서 빈 회사 표를 0 으로 그리지 않게 한다.
+ */
+export function prevBotCount(slot: AiPrevSlot | null | undefined, keys: string[]): number | null {
+  const bucket = slot?.bucket;
+  if (slot?.reason || !prevBotsUsable(bucket)) return null;
+  return keys.reduce((acc, key) => acc + (bucket.botsByCompany[key] ?? 0), 0);
 }
 
 /** 방문 그래프 점의 앞 기간 까닭 */
