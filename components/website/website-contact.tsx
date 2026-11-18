@@ -61,11 +61,13 @@ const STATUS_BADGE: Record<InquiryStatus, string> = {
 };
 
 /** 응답이 바꾸는 칸: all = 상세 조회, status = 읽음 · 처리 상태(메모는 그대로), memo = 메모 저장(메모만) */
-type ApplyMode = "all" | "status" | "memo";
+type ApplyMode = "all" | "status" | "memo" | "read";
 
 /** 응답 종류에 맞는 칸만 지금 값에 덮는다 (늦게 온 응답이 다른 칸을 옛 값으로 되돌리지 않게) */
 function applyMode(current: InquiryItem, row: InquiryItem, mode: ApplyMode): InquiryItem {
   if (mode === "memo") return { ...current, memo: row.memo };
+  // 자동 읽음 응답은 읽음만. 처리 상태 요청과 겹쳐도 처리 표시를 옛 값으로 되돌리지 않게(코덱스 22차)
+  if (mode === "read") return { ...current, is_read: row.is_read };
   if (mode === "status") return { ...row, memo: current.memo };
   return row;
 }
@@ -819,11 +821,11 @@ function InboxTab() {
       if (row.is_read) return;
       const marked = await updateInquiry(id, { is_read: true }, controller.signal);
       if (!isCurrent() || !marked.ok) return;
-      applyIfOpen(marked.data, "status");
+      applyIfOpen(marked.data, "read");
       // 읽음 저장이 됐으면 목록의 읽음 표시 · 안 읽은 수를 바로 바꾼다. 아래 새로 고침이 실패해도 옛 표시로 남지 않게
       setData((list) => {
         const before = list?.items.find((one) => one.id === id);
-        return before ? applyInquiryToList(list, applyMode(before, marked.data, "status")) : list;
+        return before ? applyInquiryToList(list, applyMode(before, marked.data, "read")) : list;
       });
       await load();
     },
