@@ -13,7 +13,20 @@ import { previousIsOldSite, readActualRange, readGscLastDate, readLaunchDate, SI
 import { axisLabel, LineChart, MultiLineChart } from "@/components/website/stats-v3/v3-chart";
 import { titlesOf } from "@/components/website/stats-v3/v3-content-data";
 import { targetKeywordsView, type KeywordChange, type TargetKeywordsView } from "@/components/website/stats-v3/v3-keywords-data";
-import { Badge, Change, DeltaBlock, Intro, LangBadge, List, PrepBadge, Spark, StatusLine, TrendCard } from "@/components/website/stats-v3/v3-parts";
+import {
+  Badge,
+  Change,
+  DeltaBlock,
+  EmptyText,
+  Intro,
+  LangBadge,
+  List,
+  NotComparable,
+  PrepBadge,
+  Spark,
+  StatusLine,
+  TrendCard
+} from "@/components/website/stats-v3/v3-parts";
 import { dayText, rangeText } from "@/components/website/stats-v3/v3-period";
 import type { V3ScreenProps } from "@/components/website/stats-v3/v3-screens";
 import {
@@ -99,7 +112,7 @@ function GroupNumber({ title, hint, group }: { title: string; hint: string; grou
 
 function KeywordChangeCell({ change }: { change: KeywordChange }) {
   if (change.type === "new") return <Badge>새로 잡힘</Badge>;
-  if (change.type === "none") return <Badge>비교 불가</Badge>;
+  if (change.type === "none") return <NotComparable />;
   if (change.type === "nopair") return <>—</>;
   return <Change delta={change.delta} />;
 }
@@ -457,12 +470,12 @@ export function V3Search({ bundle, status, fresh: bundleFresh, today, catalog }:
             </span>
           </div>
           {fresh == null ? (
-            <p className="v3-tiny">
+            <EmptyText>
               <Badge>비교 불가</Badge>{" "}
               {visitRange && previousIsOldSite(bundle)
                 ? `앞 기간(${rangeText(visitRange.prevFrom, visitRange.prevTo, year)})은 새 홈페이지를 열기 전${launch ? `(${dayText(launch, year)} 오픈)` : ""}이라, 이번에 처음 보인 말인지 견줄 기록이 없어요.`
                 : "같은 자리 앞 기간 날에 검색어 자료가 없어 처음 보인 말인지 가릴 수 없어요."}
-            </p>
+            </EmptyText>
           ) : (
             <List
               empty="이 기간에 새로 보인 검색어가 없어요."

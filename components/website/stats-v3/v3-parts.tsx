@@ -1,14 +1,61 @@
+"use client";
+
 /**
  * 통계 v3 — 목업(hub-stats-v3/index.html)의 작은 부품들.
  * 막대 폭은 인라인 style 을 쓰지 않고 SVG 의 width 속성으로 그린다.
  */
 
-import type { ReactNode } from "react";
+import { createContext, useContext, type ReactNode } from "react";
 
 import type { DeltaView } from "@/components/website/stats/stats-data";
 import { valueSegments } from "@/components/website/stats-v3/v3-chart";
 
 export const PREP = "준비 중";
+
+/* ─────────────── 자료 상태: 빈 글 · 비교 불가는 자료가 준비됐을 때만 ─────────────── */
+
+/** 이 부품들이 기대는 자료(본 응답 · AI 답에 씀 · AI 날짜별 등)의 상태 */
+export type SourceState = "loading" | "ready" | "error";
+
+export const LOADING_TEXT = "불러오는 중입니다";
+export const FAILED_TEXT = "불러오지 못했습니다. 잠시 뒤 다시 열어 주세요.";
+
+const SourceContext = createContext<SourceState>("ready");
+
+/**
+ * 안에 있는 부품이 기대는 자료의 상태를 알린다.
+ * 준비되지 않았으면(불러오는 중 · 실패) 「값이 없어요」 · 「비교 불가」 · 「기록 없음」 같은 빈 글 대신
+ * 「불러오는 중입니다」 · 「불러오지 못했습니다」를 쓴다. 바깥 상태가 이미 준비 전이면 그것을 따른다.
+ */
+export function Source({ state, children }: { state: SourceState; children: ReactNode }) {
+  const outer = useContext(SourceContext);
+  const value: SourceState = outer === "error" || state === "error" ? "error" : outer === "loading" || state === "loading" ? "loading" : "ready";
+  return <SourceContext.Provider value={value}>{children}</SourceContext.Provider>;
+}
+
+export function useSourceState(): SourceState {
+  return useContext(SourceContext);
+}
+
+/** 준비 전 짧은 글(칸 안 · 배지 자리) */
+function notReadyShort(state: SourceState): string {
+  return state === "error" ? "불러오지 못함" : "불러오는 중";
+}
+
+/** 빈 글 한 줄 — 자료가 준비됐을 때만 children, 아니면 불러오는 중 · 실패 */
+export function EmptyText({ children, className = "v3-tiny" }: { children: ReactNode; className?: string }) {
+  const state = useSourceState();
+  if (state === "loading") return <p className={className}>{LOADING_TEXT}</p>;
+  if (state === "error") return <p className={className}>{FAILED_TEXT}</p>;
+  return <p className={className}>{children}</p>;
+}
+
+/** 「비교 불가」 배지 — 자료가 준비됐을 때만. 아니면 「불러오는 중」 · 「불러오지 못함」 */
+export function NotComparable({ children = "비교 불가" }: { children?: ReactNode }) {
+  const state = useSourceState();
+  if (state !== "ready") return <span className="v3-muted">{notReadyShort(state)}</span>;
+  return <Badge>{children}</Badge>;
+}
 
 export function Badge({ children, prep }: { children: ReactNode; prep?: boolean }) {
   return <span className={prep ? "v3-badge v3-prep" : "v3-badge"}>{children}</span>;
@@ -22,9 +69,9 @@ export function LangBadge({ lang }: { lang: "ko" | "en" }) {
   return <Badge>{lang === "en" ? "영문" : "국문"}</Badge>;
 }
 
-/** ▲ 11% · ▼ 3%p · +2. 비교할 수 없으면 「비교 불가」 */
+/** ▲ 11% · ▼ 3%p · +2. 비교할 수 없으면 「비교 불가」(자료가 준비 전이면 불러오는 중 · 실패) */
 export function Change({ delta }: { delta: DeltaView }) {
-  if (delta.delta == null) return <Badge>비교 불가</Badge>;
+  if (delta.delta == null) return <NotComparable />;
   const tone = delta.tone === "flat" ? "flat" : delta.tone;
   return <span className={`v3-change ${tone}`}>{delta.delta}</span>;
 }
@@ -32,6 +79,14 @@ export function Change({ delta }: { delta: DeltaView }) {
 /** 카드 아래 — 증감 + 「앞 기간 76명」 */
 export function DeltaBlock({ delta, as = "div" }: { delta: DeltaView; as?: "div" | "p" }) {
   const Tag = as;
+  const state = useSourceState();
+  if (state !== "ready") {
+    return (
+      <Tag className="v3-delta">
+        <small>{notReadyShort(state)}</small>
+      </Tag>
+    );
+  }
   return (
     <Tag className="v3-delta">
       <Change delta={delta} />
@@ -81,7 +136,7 @@ export function Metric({ label, value, unit, delta, prep, hint }: MetricProps) {
 export type ListItem = { key: string; name: ReactNode; value: ReactNode; change?: DeltaView | null; tag?: ReactNode };
 
 export function List({ items, empty }: { items: ListItem[]; empty?: string }) {
-  if (items.length === 0) return <p className="v3-tiny">{empty ?? "이 기간에는 값이 없습니다."}</p>;
+  if (items.length === 0) return <EmptyText>{empty ?? "이 기간에는 값이 없습니다."}</EmptyText>;
   return (
     <ul className="v3-list">
       {items.map((item) => (
@@ -210,9 +265,9 @@ export function SourceLegend() {
 
 /** 불러오는 중 · 못 불러옴 · 값 없음 한 줄 */
 export function StatusLine({ status, empty }: { status: "loading" | "ready" | "error"; empty?: string }) {
-  if (status === "loading") return <p className="v3-tiny">불러오는 중입니다</p>;
-  if (status === "error") return <p className="v3-tiny">불러오지 못했습니다. 잠시 뒤 다시 열어 주세요.</p>;
-  return <p className="v3-tiny">{empty ?? "이 기간에는 값이 없습니다."}</p>;
+  if (status === "loading") return <p className="v3-tiny">{LOADING_TEXT}</p>;
+  if (status === "error") return <p className="v3-tiny">{FAILED_TEXT}</p>;
+  return <EmptyText>{empty ?? "이 기간에는 값이 없습니다."}</EmptyText>;
 }
 
 /** 추이 카드 — 제목 · 사실 한 문장 · 비교가 공정한지 · 그래프 */
@@ -229,6 +284,16 @@ export function TrendCard({
   wide?: boolean;
   children?: ReactNode;
 }) {
+  const state = useSourceState();
+  if (state !== "ready") {
+    // 자료가 오기 전 · 실패면 「기록이 없어요」 같은 사실 문장 대신 상태만
+    return (
+      <div className={wide ? "v3-trend v3-trend-wide" : "v3-trend"}>
+        <h2>{title}</h2>
+        <StatusLine status={state} />
+      </div>
+    );
+  }
   return (
     <div className={wide ? "v3-trend v3-trend-wide" : "v3-trend"}>
       <h2>{title}</h2>

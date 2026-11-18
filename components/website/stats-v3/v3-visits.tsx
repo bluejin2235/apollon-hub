@@ -11,7 +11,6 @@ import { titlesOf } from "@/components/website/stats-v3/v3-content-data";
 import { axisLabel, LineChart } from "@/components/website/stats-v3/v3-chart";
 import { durationText, prevDatesOf } from "@/components/website/stats-v3/v3-data";
 import {
-  Badge,
   Change,
   DeltaBlock,
   HBars,
@@ -19,9 +18,12 @@ import {
   LangBadge,
   Metric,
   PrepBadge,
+  EmptyText,
+  NotComparable,
   SourceLegend,
   Stack,
   StatusLine,
+  useSourceState,
   type HBarRow
 } from "@/components/website/stats-v3/v3-parts";
 import { dayText, rangeText } from "@/components/website/stats-v3/v3-period";
@@ -57,6 +59,18 @@ function Heat({ bundle }: { bundle: V3ScreenProps["bundle"] }) {
   const grid = useMemo(() => hourGrid(bundle), [bundle]);
   const prevGrid = useMemo(() => (previousIsOldSite(bundle) ? null : hourGrid(bundle, "previous")), [bundle]);
   const peak = grid ? peakCell(grid) : null;
+  const state = useSourceState();
+  if (state !== "ready") {
+    // 본 응답이 오기 전 · 실패면 「준비 중」 빈 표 대신 상태만
+    return (
+      <div className="v3-card">
+        <div className="v3-card-head">
+          <h2>요일과 시간대</h2>
+        </div>
+        <StatusLine status={state} />
+      </div>
+    );
+  }
   if (grid) {
     return (
       <div className="v3-card">
@@ -96,7 +110,7 @@ function Heat({ bundle }: { bundle: V3ScreenProps["bundle"] }) {
                     })}
                     <td>
                       {prevTotal == null ? (
-                        <Badge>비교 불가</Badge>
+                        <NotComparable />
                       ) : (
                         <Change delta={makeCountDelta(dayTotal, prevTotal, true, `${prevTotal}명`)} />
                       )}
@@ -360,7 +374,7 @@ function Flow({ bundle, status, catalog, today }: Pick<V3ScreenProps, "bundle" |
               방문이 시작된 페이지 · 전체 {entries.total.toLocaleString("ko-KR")}회 중 몫 · 막대는 어디서 왔는지
             </p>
             {entries.rows.length === 0 ? (
-              <p className="v3-tiny">이 기간에는 값이 없어요.</p>
+              <EmptyText>이 기간에는 값이 없어요.</EmptyText>
             ) : (
               entries.rows.map((row) => (
                 <div className="v3-flow-row" key={row.path}>
@@ -399,7 +413,7 @@ function Flow({ bundle, status, catalog, today }: Pick<V3ScreenProps, "bundle" |
                 <p className="v3-tiny">방문이 끝난 페이지 · 전체 {exits.total.toLocaleString("ko-KR")}회 중 몫</p>
                 {exits.comparable ? null : (
                   <p className="v3-tiny">
-                    <Badge>비교 불가</Badge> · 나간 페이지는 {dayText(PAGE_EXIT_SINCE, year)}부터 모음
+                    <NotComparable /> · 나간 페이지는 {dayText(PAGE_EXIT_SINCE, year)}부터 모음
                   </p>
                 )}
                 {exits.rows.map((row) => (

@@ -37,7 +37,18 @@ import {
 import { answerView, type AnswerCell, type AnswerView } from "@/components/website/stats-v3/v3-answer-data";
 import { axisLabel, LineChart, MultiLineChart } from "@/components/website/stats-v3/v3-chart";
 import { titlesOf } from "@/components/website/stats-v3/v3-content-data";
-import { Change, DeltaBlock, HBars, Intro, List, StatusLine, TrendCard } from "@/components/website/stats-v3/v3-parts";
+import {
+  Change,
+  DeltaBlock,
+  EmptyText,
+  HBars,
+  Intro,
+  List,
+  Source,
+  StatusLine,
+  TrendCard,
+  type SourceState
+} from "@/components/website/stats-v3/v3-parts";
 import { dayText, inclusiveDays, rangeText } from "@/components/website/stats-v3/v3-period";
 import type { V3ScreenProps } from "@/components/website/stats-v3/v3-screens";
 import { trendFact } from "@/components/website/stats-v3/v3-trend";
@@ -102,6 +113,16 @@ function shortBucketNote(buckets: AiDayBucket[]): string | null {
   const last = buckets[buckets.length - 1];
   if (last.days >= buckets[0].days) return null;
   return `7일씩 묶었어요. 마지막 칸(${bucketRangeText(last, axisLabel)})은 ${last.days}일뿐이라 낮아 보일 수 있어요. 흐름 문장은 하루 평균으로 견줬어요.`;
+}
+
+/**
+ * 답에 씀 기록의 자료 상태. 받기 실패(none: 표가 없거나 읽기 실패)와 본 응답 실패(error)는 실패로 본다.
+ * 그래야 받지 못했는데 「확인한 기록이 없어요」라고 쓰지 않는다
+ */
+function answersSource(state: V3ScreenProps["extras"]["answers"]["state"]): SourceState {
+  if (state === "loading") return "loading";
+  if (state === "ready") return "ready";
+  return "error";
 }
 
 function AiTrends({ bundle, extras, today }: Pick<V3ScreenProps, "bundle" | "extras" | "today">) {
@@ -211,12 +232,15 @@ function AiTrends({ bundle, extras, today }: Pick<V3ScreenProps, "bundle" | "ext
 
   const loading = days.state === "loading";
   const failed = days.state === "error";
+  // 로봇 · 방문 흐름 카드는 날짜별 자료(aiDays)가 준비됐을 때만 「기록이 없어요」 같은 문장을 쓴다
+  const daysSource: SourceState = loading ? "loading" : failed ? "error" : "ready";
   const weekNote = shortBucketNote(days.buckets);
 
   return (
     <>
       <h2 className="v3-section-title">날짜별 흐름 · 잘 되고 있나요?</h2>
       <div className="v3-trends">
+        <Source state={daysSource}>
         <TrendCard title="AI 로봇이 읽어 간 횟수 · 회사별" fact={botFact} note={weekNote ?? undefined} wide>
           {loading ? (
             <StatusLine status="loading" />
@@ -241,6 +265,8 @@ function AiTrends({ bundle, extras, today }: Pick<V3ScreenProps, "bundle" | "ext
             </p>
           )}
         </TrendCard>
+        </Source>
+        <Source state={daysSource}>
         <TrendCard
           title="AI 답변을 보고 온 방문 · 날짜별"
           fact={visitFact}
@@ -268,7 +294,10 @@ function AiTrends({ bundle, extras, today }: Pick<V3ScreenProps, "bundle" | "ext
             <p className="v3-tiny">하루짜리 기간이라 선을 그리지 않아요.</p>
           )}
         </TrendCard>
-        <TrendCard title="AI 답변에 우리가 나온 질문 · 확인할 때마다" fact={answerFact} />
+        </Source>
+        <Source state={answersSource(extras.answers.state)}>
+          <TrendCard title="AI 답변에 우리가 나온 질문 · 확인할 때마다" fact={answerFact} />
+        </Source>
       </div>
     </>
   );
@@ -309,7 +338,7 @@ function ReadCard({ bundle, status, catalog, from, to, today }: Pick<V3ScreenPro
           <DeltaBlock delta={botsDelta(payload.ai.total)} />
           <p className="v3-group-label">AI 회사별 · 무엇에 쓰는 로봇인지</p>
           <div className="v3-ai-bars">
-            {companies.length > 0 ? <CompanyBars rows={companies} /> : <p className="v3-tiny">이 기간에 온 AI 로봇이 없어요.</p>}
+            {companies.length > 0 ? <CompanyBars rows={companies} /> : <EmptyText>이 기간에 온 AI 로봇이 없어요.</EmptyText>}
           </div>
           <div className="v3-highlight">
             <p className="v3-tiny">누가 AI에게 물어봐서, AI가 그 자리에서 우리 페이지를 연 횟수</p>
@@ -494,7 +523,7 @@ function AnswerCard({ extras, today }: Pick<V3ScreenProps, "extras" | "today">) 
       <p className="v3-card-sub">사람이 AI에게 직접 물어보고 답을 적은 기록이에요.</p>
     </>
   );
-  if (extras.answers.state === "error") {
+  if (extras.answers.state === "error" || extras.answers.state === "none") {
     return (
       <div className="v3-card v3-ai-wide">
         {head}

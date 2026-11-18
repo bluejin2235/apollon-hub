@@ -10,6 +10,7 @@ import { useEffect, useMemo, useState, type ComponentType, type ReactNode } from
 import { useStatsActionsLoader } from "@/components/website/stats/stats-actions";
 import { readActualRange, readLaunchDate, SITE_LAUNCH_DATE } from "@/components/website/stats/stats-data";
 import type { LoadStatus } from "@/components/website/stats/stats-slot";
+import { Source } from "@/components/website/stats-v3/v3-parts";
 import { V3Ai } from "@/components/website/stats-v3/v3-ai";
 import {
   aiDayBucket,
@@ -355,6 +356,13 @@ export function V3Shell({ screen }: { screen: V3ScreenId }) {
   // 그 전에는 응답 없이(null) 「불러오는 중」으로 그려, 옛 기간 응답에서 나온 글이 한 줄도 남지 않게 한다.
   // 머리(기간 고르기 · 비교 줄)만 늘 보인다. 실패면 「불러오지 못함」 그대로
   const screenBundle = bundleFresh ? bundle : null;
+  // 직접 고른 날짜가 비었거나 시작이 끝보다 늦으면 요청을 보내지 않으므로, 본문 대신 날짜를 고르라는 글을 쓴다
+  const rangeProblem =
+    !from || !to
+      ? "날짜를 골라 주세요. 시작 날짜와 끝 날짜가 모두 있어야 숫자를 불러와요."
+      : from > to
+        ? "시작 날짜가 끝 날짜보다 늦어요. 날짜를 다시 골라 주세요."
+        : null;
   const screenStatus: LoadStatus = bundleFresh ? status : status === "error" ? "error" : "loading";
 
   return (
@@ -376,18 +384,27 @@ export function V3Shell({ screen }: { screen: V3ScreenId }) {
         />
       }
     >
-      {Screen ? (
-        <Screen
-          bundle={screenBundle}
-          status={screenStatus}
-          fresh={bundleFresh}
-          from={from}
-          to={to}
-          today={today}
-          catalog={catalog}
-          actions={actions}
-          extras={extras}
-        />
+      {rangeProblem ? (
+        // 날짜를 지웠거나 거꾸로 골랐으면 요청을 보내지 않는다. 「불러오는 중」에 머물지 않고 고칠 일을 알린다
+        <div className="v3-card">
+          <p className="v3-tiny" role="status">
+            {rangeProblem}
+          </p>
+        </div>
+      ) : Screen ? (
+        <Source state={screenStatus}>
+          <Screen
+            bundle={screenBundle}
+            status={screenStatus}
+            fresh={bundleFresh}
+            from={from}
+            to={to}
+            today={today}
+            catalog={catalog}
+            actions={actions}
+            extras={extras}
+          />
+        </Source>
       ) : null}
     </V3Frame>
   );
