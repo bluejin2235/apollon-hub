@@ -318,6 +318,10 @@ export type LineChartProps = {
   prevDates?: (string | null)[];
   /** 상자 첫 줄 날짜 글. 며칠 묶음이면 「11월 1일~11월 7일 (7일)」처럼 두 날짜를 다 쓴다 */
   tipHeads?: string[];
+  /** 상자 앞 기간 줄의 날짜 글(묶음이면 두 날짜). 없으면 prevDates */
+  prevTipHeads?: (string | null)[];
+  /** 앞 기간 값이 없는 점에서 상자에 쓰는 까닭. 없으면 「앞 기간 기록 없음」 */
+  prevReason?: string | null;
   /** 상자 숫자 뒤 단위 — 명 · 회 · 개 */
   unit?: string;
   mini?: boolean;
@@ -333,8 +337,24 @@ export type LineChartProps = {
 
 /** 이번 기간 실선 · 앞 기간 점선 */
 export function LineChart(props: LineChartProps) {
-  const { labels, current, previous, dates, prevDates, tipHeads, unit = "", mini, two, marks, format, tipFormat, ariaLabel, initialActive } =
-    props;
+  const {
+    labels,
+    current,
+    previous,
+    dates,
+    prevDates,
+    tipHeads,
+    prevTipHeads,
+    prevReason,
+    unit = "",
+    mini,
+    two,
+    marks,
+    format,
+    tipFormat,
+    ariaLabel,
+    initialActive
+  } = props;
   const fmt = format ?? ((v: number) => String(Math.round(v)));
   const tipFmt = (v: number) =>
     tipFormat ? tipFormat(v) : `${Number.isInteger(v) ? v.toLocaleString("ko-KR") : fmt(v)}${unit}`;
@@ -347,12 +367,12 @@ export function LineChart(props: LineChartProps) {
     const day = tipHeads?.[i] ?? (dates?.[i] ? axisLabel(dates[i]) : labels[i]);
     const now = current[i];
     const before = previous[i];
-    const prevDay = prevDates?.[i] ? axisLabel(prevDates[i] as string) : null;
+    const prevDay = prevTipHeads?.[i] ?? (prevDates?.[i] ? axisLabel(prevDates[i] as string) : null);
     const lines = [`${day} · 이번 기간 ${typeof now === "number" ? tipFmt(now) : "기록 없음"}`];
     lines.push(
       typeof before === "number"
         ? `${prevDay ?? "같은 순번 날"} · 앞 기간 ${tipFmt(before)}`
-        : `${prevDay ? `${prevDay} · ` : ""}앞 기간 기록 없음`
+        : `${prevDay ? `${prevDay} · ` : ""}${prevReason ? `앞 기간 자료 없음 (${prevReason})` : "앞 기간 기록 없음"}`
     );
     return { lines, keys: ["current", "previous"] as ChartSeries["look"][] };
   };
@@ -391,29 +411,65 @@ export type MultiLineChartProps = {
   dates: string[];
   /** 가로축 글자. 없으면 날짜 */
   labels?: string[];
-  series: { name: string; values: (number | null)[] }[];
+  /** previous = 같은 자리 앞 기간 값(선은 그리지 않고 상자에만 쓴다). 그 날 자료가 없으면 null */
+  series: { name: string; values: (number | null)[]; previous?: (number | null)[] | null }[];
   /** 상자 첫 줄 날짜 글. 없으면 가로축 글 */
   tipHeads?: string[];
+  /** 상자 앞 기간 줄의 날짜 글(같은 자리 앞 기간 날) */
+  prevTipHeads?: (string | null)[];
+  /** 앞 기간 값이 하나도 없는 점에서 상자에 쓰는 까닭: 「앞 기간 자료 없음 (까닭)」 */
+  prevReason?: string | null;
   unit?: string;
   mini?: boolean;
   format?: (value: number) => string;
   ariaLabel: string;
 };
 
-/** 여러 갈래를 한 그림에 — 회사별 · 회사 이름 vs 일반 명사 */
-export function MultiLineChart({ dates, labels, series, tipHeads, unit = "", mini, format, ariaLabel }: MultiLineChartProps) {
+/**
+ * 여러 갈래를 한 그림에: 회사별 · 회사 이름 vs 일반 명사.
+ * 선은 이번 기간만 그린다(갈래마다 점선을 더하면 읽을 수 없다). 앞 기간 값은 마우스 상자에 갈래마다 붙인다.
+ */
+export function MultiLineChart({
+  dates,
+  labels,
+  series,
+  tipHeads,
+  prevTipHeads,
+  prevReason,
+  unit = "",
+  mini,
+  format,
+  ariaLabel
+}: MultiLineChartProps) {
   const fmt = format ?? ((v: number) => String(Math.round(v)));
   const looks: ChartSeries[] = series.map((s, i) => ({ name: s.name, values: s.values, look: i }));
   const axis = labels ?? dates.map(axisLabel);
-  const tip = (i: number) => ({
-    lines: [
-      tipHeads?.[i] ?? axis[i],
-      ...looks.map(
-        (s) => `${s.name} ${typeof s.values[i] === "number" ? `${(s.values[i] as number).toLocaleString("ko-KR")}${unit}` : "기록 없음"}`
-      )
-    ],
-    keys: [null, ...looks.map((s) => s.look)]
-  });
+  const num = (value: number | null | undefined) =>
+    typeof value === "number" ? `${value.toLocaleString("ko-KR")}${unit}` : null;
+  // 앞 기간 이야기를 상자에 쓸지: 갈래에 앞 기간 배열이 있거나, 없는 까닭을 받았을 때
+  const prevTold = prevReason != null || series.some((s) => s.previous != null);
+  const tip = (i: number) => {
+    const anyPrev = series.some((s) => typeof s.previous?.[i] === "number");
+    const head = tipHeads?.[i] ?? axis[i];
+    const prevHead = prevTipHeads?.[i] ?? null;
+    const lines: string[] = [head];
+    const keys: (ChartSeries["look"] | null)[] = [null];
+    if (prevTold) {
+      lines.push(
+        anyPrev
+          ? `앞 기간 견준 날 ${prevHead ?? "같은 자리 날"}`
+          : `${prevHead ? `${prevHead} · ` : ""}앞 기간 자료 없음${prevReason ? ` (${prevReason})` : ""}`
+      );
+      keys.push(null);
+    }
+    series.forEach((s, k) => {
+      const now = num(s.values[i]) ?? "기록 없음";
+      const before = anyPrev ? ` · 앞 기간 ${num(s.previous?.[i]) ?? "자료 없음"}` : "";
+      lines.push(`${s.name} ${now}${before}`);
+      keys.push(looks[k].look);
+    });
+    return { lines, keys };
+  };
   return (
     <>
       <SeriesChart labels={axis} series={looks} mini={mini} format={fmt} ariaLabel={ariaLabel} tip={tip} />

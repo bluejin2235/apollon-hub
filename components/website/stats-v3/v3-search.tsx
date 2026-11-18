@@ -52,16 +52,43 @@ function missingText(dates: string[], year: number): string {
   return `${shown}${more}은 검색어 자료가 아직 없어`;
 }
 
+/**
+ * 「어떤 말로 찾아오나요?」 옆 글: 실제로 견준 날 수를 밝힌다.
+ * 두 기간 모두 검색어 자료가 있는 날 짝만 견주므로, 이번 기간 자료가 있는 날보다 적을 수 있다.
+ */
+function compareText(range: NonNullable<ReturnType<typeof searchRange>>, year: number): string {
+  const span = range.from === range.to ? dayText(range.from, year) : rangeText(range.from, range.to, year);
+  if (!range.prevFrom || !range.prevTo) {
+    return `검색어 자료가 있는 ${range.currentDays}일(${span}) · 앞 기간은 같은 자리 날에 검색어 자료가 없어 견주지 않음`;
+  }
+  const prevSpan = range.prevFrom === range.prevTo ? dayText(range.prevFrom, year) : rangeText(range.prevFrom, range.prevTo, year);
+  const skipped = range.currentDays - range.days;
+  return `두 기간 모두 검색어 자료가 있는 ${range.days}일끼리 견줌 · 이번 ${span} · 앞 기간 ${prevSpan}${
+    skipped > 0 ? ` · 앞 기간 자료가 없는 ${skipped}일은 뺌` : ""
+  }`;
+}
+
 function GroupNumber({ title, hint, group }: { title: string; hint: string; group: SearchGroup | null }) {
+  if (!group) {
+    // 검색어 행이 하나도 없으면 0번이 아니라 자료 없음
+    return (
+      <>
+        <div className="v3-muted">{title}</div>
+        <div className="v3-big-num">—</div>
+        <p className="v3-metric-hint">{hint}</p>
+        <p className="v3-metric-hint">검색어 자료가 아직 없어요. 0번이 아니에요.</p>
+      </>
+    );
+  }
   return (
     <>
       <div className="v3-muted">{title}</div>
       <div className="v3-big-num">
-        {group?.clicks ?? "—"}
-        <span> 번 눌림 · {group?.impressions ?? "—"}번 보임</span>
+        {group.clicks ?? "—"}
+        <span> 번 눌림 · {group.impressions ?? "—"}번 보임</span>
       </div>
       <p className="v3-metric-hint">{hint}</p>
-      {group ? <DeltaBlock delta={group.delta} /> : null}
+      <DeltaBlock delta={group.delta} />
     </>
   );
 }
@@ -85,6 +112,9 @@ function SearchTrends({ bundle, today }: { bundle: StatsBundle | null; today: st
     : null;
   const lag = lagText(bundle, year);
   const labels = (dates: string[]) => dates.map(axisLabel);
+  const prevHeads = (dates: (string | null)[]) => dates.map((date) => (date ? axisLabel(date) : null));
+  // 마우스 상자에서 앞 기간 값이 없을 때 쓰는 까닭
+  const prevReason = unfair ? "앞 기간은 새 홈페이지를 열기 전" : "같은 자리 앞 기간 날에 검색어 자료가 없음";
 
   const clickFact = trendFact({ name: "구글 검색에서 눌린 횟수", unit: "번", current: clicks.current, previous: clicks.previous, unfairReason: unfair });
   const impFact = trendFact({ name: "구글 검색에 보인 횟수", unit: "번", current: impressions.current, previous: impressions.previous, unfairReason: unfair });
@@ -155,10 +185,12 @@ function SearchTrends({ bundle, today }: { bundle: StatsBundle | null; today: st
               mini
               dates={splitImp.dates}
               series={[
-                { name: "회사 이름", values: splitImp.brand },
-                { name: "일반 명사", values: splitImp.generic },
-                { name: "구글이 숨긴 검색어", values: splitImp.hidden }
+                { name: "회사 이름", values: splitImp.brand, previous: splitImp.prevBrand },
+                { name: "일반 명사", values: splitImp.generic, previous: splitImp.prevGeneric },
+                { name: "구글이 숨긴 검색어", values: splitImp.hidden, previous: splitImp.prevHidden }
               ]}
+              prevTipHeads={prevHeads(splitImp.prevDates)}
+              prevReason={prevReason}
               unit="번"
               format={countTick}
               ariaLabel="회사 이름 일반 명사 숨긴 검색어 노출 날짜별"
@@ -177,10 +209,12 @@ function SearchTrends({ bundle, today }: { bundle: StatsBundle | null; today: st
               mini
               dates={splitClk.dates}
               series={[
-                { name: "회사 이름", values: splitClk.brand },
-                { name: "일반 명사", values: splitClk.generic },
-                { name: "구글이 숨긴 검색어", values: splitClk.hidden }
+                { name: "회사 이름", values: splitClk.brand, previous: splitClk.prevBrand },
+                { name: "일반 명사", values: splitClk.generic, previous: splitClk.prevGeneric },
+                { name: "구글이 숨긴 검색어", values: splitClk.hidden, previous: splitClk.prevHidden }
               ]}
+              prevTipHeads={prevHeads(splitClk.prevDates)}
+              prevReason={prevReason}
               unit="번"
               format={countTick}
               ariaLabel="회사 이름 일반 명사 숨긴 검색어 클릭 날짜별"
@@ -197,7 +231,7 @@ function SearchTrends({ bundle, today }: { bundle: StatsBundle | null; today: st
               unit: "번",
               current: target.current,
               previous: null,
-              unfairReason: unfair ?? "앞 기간 날짜 줄은 아직 그리지 않아요. 아래 표의 증감을 보세요."
+              unfairReason: unfair ?? "흐름 판단은 아래 표의 증감을 보세요. 그래프 점선은 같은 자리 앞 기간 날 값이에요."
             })}
             wide
           >
@@ -207,8 +241,10 @@ function SearchTrends({ bundle, today }: { bundle: StatsBundle | null; today: st
                 two
                 labels={labels(target.dates)}
                 dates={target.dates}
+                prevDates={target.prevDates}
                 current={target.current}
-                previous={[]}
+                previous={target.previous}
+                prevReason={prevReason}
                 unit="번"
                 format={countTick}
                 ariaLabel="목표 키워드 노출 날짜별"
@@ -349,12 +385,7 @@ export function V3Search({ bundle, status, today, catalog }: V3ScreenProps) {
       <div className="v3-card">
         <div className="v3-card-head">
           <h2>어떤 말로 찾아오나요?</h2>
-          {range ? (
-            <span className="v3-tiny">
-              검색어 자료가 있는 {rangeText(range.from, range.to, year)} · 앞 기간{" "}
-              {range.prevFrom && range.prevTo ? rangeText(range.prevFrom, range.prevTo, year) : "검색어 기록 없음"}
-            </span>
-          ) : null}
+          {range ? <span className="v3-tiny">{compareText(range, year)}</span> : null}
         </div>
         <p className="v3-head-help">
           <b>보인 횟수</b>: 구글 검색 결과에 우리 사이트가 나온 횟수 · <b>눌린 횟수</b>: 그걸 보고 누른 횟수 · {lag}
@@ -402,14 +433,16 @@ export function V3Search({ bundle, status, today, catalog }: V3ScreenProps) {
         <div className="v3-card">
           <div className="v3-card-head">
             <h2>새로 보인 검색어</h2>
-            <span className="v3-tiny">목표 키워드 밖에서 처음 보인 말</span>
+            <span className="v3-tiny">
+              목표 키워드 밖에서 처음 보인 말{fresh != null && range ? ` · 같은 자리 앞 기간 날에도 자료가 있는 ${range.days}일만 봄` : ""}
+            </span>
           </div>
           {fresh == null ? (
             <p className="v3-tiny">
               <Badge>비교 불가</Badge>{" "}
-              {visitRange
+              {visitRange && previousIsOldSite(bundle)
                 ? `앞 기간(${rangeText(visitRange.prevFrom, visitRange.prevTo, year)})은 새 홈페이지를 열기 전${launch ? `(${dayText(launch, year)} 오픈)` : ""}이라, 이번에 처음 보인 말인지 견줄 기록이 없어요.`
-                : "앞 기간 검색어 기록이 없어 처음 보인 말인지 가릴 수 없어요."}
+                : "같은 자리 앞 기간 날에 검색어 자료가 없어 처음 보인 말인지 가릴 수 없어요."}
             </p>
           ) : (
             <List

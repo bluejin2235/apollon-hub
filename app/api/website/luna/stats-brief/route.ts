@@ -173,7 +173,7 @@ function buildPrompt(facts: Facts): string {
     pair(
       facts.visitsBasis === "period"
         ? "방문자 (명, 기간 전체를 한 번 센 수)"
-        : "방문자 (명, 날짜별 합 · 여러 날 온 사람은 여러 번 셈)",
+        : "방문자 (이번에는 기간 방문자 수를 세지 못해 값이 없음. 방문자 숫자를 말하지 마세요)",
       num(facts.visits?.current),
       num(facts.visits?.previous)
     ),

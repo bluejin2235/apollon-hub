@@ -120,12 +120,38 @@ function AiTrends({ bundle, extras, today }: Pick<V3ScreenProps, "bundle" | "ext
     .map(([key]) => key);
   const shown = topCompanies.slice(0, 4);
   const restKeys = topCompanies.slice(4);
+  // 같은 자리 앞 기간 칸: 마우스 상자에서 견줄 값. 로봇 기록 시작 전 칸은 null
+  const prevOf = (bucket: AiDayBucket): AiDayBucket | null => {
+    const at = days.buckets.indexOf(bucket);
+    return at >= 0 ? (days.previous?.[at] ?? null) : null;
+  };
+  const prevCompany = (bucket: AiDayBucket, keys: string[]): number | null => {
+    const before = prevOf(bucket)?.botsByCompany;
+    return before ? keys.reduce((acc, key) => acc + (before[key] ?? 0), 0) : null;
+  };
   const botSeries = [
-    ...shown.map((key) => ({ name: companyLabel(key, true), values: botBuckets.map((b) => b.botsByCompany?.[key] ?? 0) })),
+    ...shown.map((key) => ({
+      name: companyLabel(key, true),
+      values: botBuckets.map((b) => b.botsByCompany?.[key] ?? 0),
+      previous: botBuckets.map((b) => prevCompany(b, [key]))
+    })),
     ...(restKeys.length > 0
-      ? [{ name: "그 밖 회사", values: botBuckets.map((b) => restKeys.reduce((acc, key) => acc + (b.botsByCompany?.[key] ?? 0), 0)) }]
+      ? [
+          {
+            name: "그 밖 회사",
+            values: botBuckets.map((b) => restKeys.reduce((acc, key) => acc + (b.botsByCompany?.[key] ?? 0), 0)),
+            previous: botBuckets.map((b) => prevCompany(b, restKeys))
+          }
+        ]
       : [])
   ];
+  const botPrevReason =
+    days.previousReason ?? (since ? `로봇 기록은 ${dayText(since, year)}부터` : "앞 기간 로봇 기록 없음");
+  const prevHead = (bucket: AiDayBucket, bots: boolean): string | null => {
+    const before = prevOf(bucket);
+    return before ? bucketHead(before, bots) : null;
+  };
+  const visitPrevReason = days.previousReason ?? "앞 기간 기록 없음";
   const botPrev = payload?.ai.total.previous ?? null;
   const botFact =
     payload && botPrev != null
@@ -195,6 +221,8 @@ function AiTrends({ bundle, extras, today }: Pick<V3ScreenProps, "bundle" | "ext
               dates={botBuckets.map((b) => b.from)}
               labels={botBuckets.map(bucketLabel)}
               tipHeads={botBuckets.map((b) => bucketHead(b, true))}
+              prevTipHeads={botBuckets.map((b) => prevHead(b, true))}
+              prevReason={botPrevReason}
               series={botSeries}
               unit="회"
               ariaLabel="AI 로봇이 읽어 간 횟수 회사별 날짜별"
@@ -223,8 +251,10 @@ function AiTrends({ bundle, extras, today }: Pick<V3ScreenProps, "bundle" | "ext
               labels={days.buckets.map(bucketLabel)}
               dates={days.buckets.map((b) => b.from)}
               tipHeads={days.buckets.map((b) => bucketHead(b, false))}
+              prevTipHeads={days.buckets.map((b) => prevHead(b, false))}
+              prevReason={visitPrevReason}
               current={days.buckets.map((b) => b.visits)}
-              previous={[]}
+              previous={days.buckets.map((b) => prevOf(b)?.visits ?? null)}
               unit="회"
               ariaLabel="AI 답변을 보고 온 방문 날짜별"
             />
@@ -530,6 +560,39 @@ function AnswerCard({ extras, today }: Pick<V3ScreenProps, "extras" | "today">) 
                 : `${col.mentioned} / ${col.checked}개 질문`
         }))}
       />
+      <h3>AI마다 얼마나 확인했나</h3>
+      <p className="v3-tiny">
+        마지막으로 물어본 날, 전체 질문 {view.questionsTotal}개 중 물어본 질문 수, 사람이 「틀림」으로 적은 답 수예요. 물어본
+        질문이 적거나 오래됐으면 그 AI 결과는 덜 믿을 만해요.
+      </p>
+      <div className="v3-table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>AI</th>
+              <th>마지막 확인</th>
+              <th className="v3-num">확인한 질문</th>
+              <th className="v3-num">틀린 내용</th>
+            </tr>
+          </thead>
+          <tbody>
+            {view.reliability.map((item) => (
+              <tr key={item.label}>
+                <td>{item.label}</td>
+                <td>{item.lastChecked ? dayText(item.lastChecked, year) : "이 기간 확인 안 함"}</td>
+                <td className="v3-num">
+                  {item.checked != null
+                    ? `${item.checked} / ${item.total}개`
+                    : item.lastChecked
+                      ? "모름 (예전 회차라 질문 수를 못 받음)"
+                      : "—"}
+                </td>
+                <td className="v3-num">{item.wrong != null ? `${item.wrong}건` : item.lastChecked ? "모름" : "—"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
       <h3>어떤 질문에 우리 이름이 나왔나요?</h3>
       <p className="v3-tiny">○ 나옴 · × 안 나옴 · 「확인 안 함」은 그 AI에 물어보지 않은 것 · ○를 누르면 어떻게 나왔는지 보여요 · ! 틀린 내용 있음</p>
       <AnswerTable view={view} />

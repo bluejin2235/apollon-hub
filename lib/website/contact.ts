@@ -232,6 +232,25 @@ export function findInquiryFile(
   return items.find((file) => file.name === ref.name);
 }
 
+/**
+ * 지금 탭에서 열어도 페이지가 바뀌지 않고 내려받게 되는 주소.
+ * 홈페이지가 주는 서명 주소에는 download= 가 붙어 있어 파일로 내려받아진다. 없으면 붙인다.
+ * http(s) 주소가 아니면 null: 지금 탭에서 열지 않는다.
+ */
+export function inquiryDownloadUrl(url: string, name: string): string | null {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return null;
+  }
+  if (parsed.protocol !== "https:" && parsed.protocol !== "http:") return null;
+  // 이미 있으면 받은 주소를 그대로 쓴다(서명 글자를 다시 바꿔 쓰지 않게)
+  if (parsed.searchParams.has("download")) return url;
+  parsed.searchParams.set("download", name);
+  return parsed.toString();
+}
+
 /** 고객이 쓴 글: text, 없으면 message */
 export function customerTextOf(item: InquiryItem): string | null {
   if (typeof item.text === "string") return item.text;

@@ -38,6 +38,22 @@ export type AnswerColumn = {
   mentioned: number;
 };
 
+/**
+ * AI 서비스마다 얼마나 확인했나: 「답에 씀」 결과를 얼마나 믿을지 판단하는 근거.
+ * 질문 수와 틀린 사실은 홈페이지가 마지막 회차(latest) 칸만 주므로, 마지막 확인이 그 회차가 아니면 null(모름)이다.
+ */
+export type AnswerReliability = {
+  label: string;
+  /** 이 기간 안에서 이 AI 를 마지막으로 확인한 날. 이 기간에 확인하지 않았으면 null */
+  lastChecked: string | null;
+  /** 마지막 회차에 이 AI 로 확인한 질문 수. 모르면 null */
+  checked: number | null;
+  /** 전체 질문 수(활성 질문) */
+  total: number;
+  /** 마지막 회차에 적힌 틀린 사실 수. 모르면 null */
+  wrong: number | null;
+};
+
 export type AnswerView = {
   latest: string;
   previous: string | null;
@@ -57,6 +73,9 @@ export type AnswerView = {
   rows: AnswerRow[];
   citedTop: { url: string; count: number }[];
   wrongFacts: number;
+  /** 전체 질문 수: 홈페이지가 활성 질문을 모두 줄로 준다 */
+  questionsTotal: number;
+  reliability: AnswerReliability[];
 };
 
 /** 화면 열 이름 → 홈페이지 서비스 열쇠. 요약의 services 에 없는 서비스(그 회차에 확인 안 함)도 칸을 찾게 */
@@ -148,6 +167,38 @@ export function answerView(summary: AiAnswerSummary | null): AnswerView | null {
   }
   const hasBefore = summary.previous != null && qBoth > 0;
 
+  // AI 마다 마지막 확인 날 · 확인한 질문 수 · 틀린 사실 수. 늘 보이는 열 + 이 기간에 확인한 그 밖 서비스
+  const labelOfKey = new Map<string, string>();
+  for (const [label, key] of keyOf) if (!labelOfKey.has(key)) labelOfKey.set(key, label);
+  const reliabilityLabels = [...labels];
+  for (const round of summary.rounds) {
+    for (const key of round.services) {
+      const label = labelOfKey.get(key) ?? key;
+      if (!reliabilityLabels.includes(label)) reliabilityLabels.push(label);
+    }
+  }
+  const questionsTotal = summary.grid.length;
+  const reliability = reliabilityLabels.map((label): AnswerReliability => {
+    const key = keyOf.get(label) ?? label;
+    const lastChecked =
+      summary.rounds
+        .filter((round) => round.services.includes(key))
+        .map((round) => round.checked_on)
+        .sort()
+        .pop() ?? null;
+    const inLatest = lastChecked != null && lastChecked === summary.latest;
+    return {
+      label,
+      lastChecked,
+      checked: inLatest ? summary.grid.filter((row) => row.cells[key] != null).length : null,
+      total: questionsTotal,
+      wrong: inLatest
+        ? // 사람이 「틀림」으로 적은 것(wrong_facts)만 센다. 칸의 메모만으로는 세지 않는다
+          summary.wrong_facts.filter((w) => w.ai_service === key).length
+        : null
+    };
+  });
+
   return {
     latest: summary.latest,
     previous: summary.previous,
@@ -166,6 +217,8 @@ export function answerView(summary: AiAnswerSummary | null): AnswerView | null {
       .filter((row) => row.cells.some((cell) => cell.mentioned != null))
       .map(({ id, question, cells, diff }) => ({ id, question, cells, diff })),
     citedTop: summary.cited_top.slice(0, 5),
-    wrongFacts: summary.wrong_facts.length
+    wrongFacts: summary.wrong_facts.length,
+    questionsTotal,
+    reliability
   };
 }

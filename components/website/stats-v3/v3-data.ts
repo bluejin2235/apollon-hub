@@ -2,11 +2,13 @@
  * 통계 v3 — 다섯 화면이 함께 쓰는 숫자.
  *
  * 계산은 지금 화면의 함수를 그대로 쓴다. summary-data.ts 가 내보내지 않는 것
- * (visitsOf · isArticlePath · searchToArticleOf · genericClicksOf)은 고치지 않고 복사했다.
+ * (visitsOf · isArticlePath · searchToArticleOf · genericClicksOf)은 복사했다.
+ * visitsOf 만 고쳤다. 기간 방문자가 없을 때 날짜별 합으로 대신하지 않는다(다시 온 사람을 여러 번 센다).
  * 지금 화면 규칙과 같다 — 값이 없으면 null 이고, 「—」로 바꾸는 일은 그리는 자리에서 한다.
  */
 
 import { isBrandQuery } from "@/components/website/stats/search-data";
+import { PERIOD_USERS_MISSING_NOTE } from "@/components/website/stats/stats-labels";
 import {
   byDate,
   makeCountDelta,
@@ -44,25 +46,37 @@ function readPeriodUsers(bundle: StatsBundle | null): PeriodUsersCompare | null 
   return null;
 }
 
-/** 방문자 — 기간 전체를 한 번 센 값. 없으면 날짜별 합으로 대신한다 */
+/**
+ * 방문자: 기간 전체를 한 번 센 값(period_users)만 쓴다.
+ * 그 값이 없을 때 날짜별 방문자를 더하면 여러 날 온 사람을 여러 번 세므로 대신 쓰지 않는다.
+ * 이때 값은 null(화면은 「—」)이고, 날짜별 자료는 있는데 기간 값만 빠졌으면 periodMissing=true 다.
+ */
 export function visitsOf(bundle: StatsBundle | null): {
   current: number | null;
   previous: number | null;
   periodUsers: boolean;
+  periodMissing: boolean;
 } {
   const periodUsers = readPeriodUsers(bundle);
   if (periodUsers) {
     return {
       current: periodUsers.current,
       previous: typeof periodUsers.previous === "number" ? periodUsers.previous : null,
-      periodUsers: true
+      periodUsers: true,
+      periodMissing: false
     };
   }
   return {
-    current: sumField(ga4(bundle, "daily", "current"), "users"),
-    previous: sumField(ga4(bundle, "daily", "previous"), "users"),
-    periodUsers: false
+    current: null,
+    previous: null,
+    periodUsers: false,
+    periodMissing: ga4(bundle, "daily", "current").some((row) => typeof row.users === "number")
   };
+}
+
+/** 방문자 칸 아래 짧은 알림: 기간 방문자 수를 이번에 못 받았을 때만 */
+export function visitorsNote(bundle: StatsBundle | null): string | null {
+  return visitsOf(bundle).periodMissing ? PERIOD_USERS_MISSING_NOTE : null;
 }
 
 /** 처음 온 사람 = 새 방문자, 다시 온 사람 = 전체 − 새 방문자. 기간 전체 방문자가 없으면 null */

@@ -327,6 +327,7 @@ export function V3Overview(props: V3ScreenProps) {
               value={card?.value ?? null}
               unit={spec.unit}
               delta={card?.delta}
+              hint={card?.hint ?? undefined}
               prep={status === "ready" && !card}
             />
           );

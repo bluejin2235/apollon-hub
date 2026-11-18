@@ -31,6 +31,7 @@ import {
 } from "@/components/website/stats/stats-data";
 import {
   inquiryLeadText,
+  PERIOD_USERS_MISSING_NOTE,
   withUnit,
   type SummaryCardId
 } from "@/components/website/stats/stats-labels";
@@ -67,24 +68,31 @@ function readPeriodUsers(bundle: StatsBundle | null): PeriodUsersCompare | null 
 
 /* ─────────────────────── 카드 셋 ─────────────────────── */
 
-/** 방문자 — 기간 전체를 한 번 센 값. 없으면 날짜별 합으로 대신한다 */
+/**
+ * 방문자: 기간 전체를 한 번 센 값(period_users)만 쓴다.
+ * 없을 때 날짜별 방문자를 더하면 여러 날 온 사람을 여러 번 세므로 대신 쓰지 않고 null 로 둔다.
+ * 날짜별 자료는 있는데 기간 값만 빠졌으면 periodMissing=true: 카드 아래에 알림을 붙인다.
+ */
 function visitsOf(bundle: StatsBundle | null): {
   current: number | null;
   previous: number | null;
   periodUsers: boolean;
+  periodMissing: boolean;
 } {
   const periodUsers = readPeriodUsers(bundle);
   if (periodUsers) {
     return {
       current: periodUsers.current,
       previous: typeof periodUsers.previous === "number" ? periodUsers.previous : null,
-      periodUsers: true
+      periodUsers: true,
+      periodMissing: false
     };
   }
   return {
-    current: total(ga4(bundle, "daily", "current"), "users"),
-    previous: total(ga4(bundle, "daily", "previous"), "users"),
-    periodUsers: false
+    current: null,
+    previous: null,
+    periodUsers: false,
+    periodMissing: ga4(bundle, "daily", "current").some((row) => typeof row.users === "number")
   };
 }
 
@@ -162,7 +170,8 @@ export function buildSummaryCards(bundle: StatsBundle | null): SummaryCard[] {
       id: "visit",
       value: intText(visits.current),
       ...makeDelta(visits.current, visitsPrev, "ratio", true, withUnit(intText(visitsPrev), "visit")),
-      periodUsers: visits.periodUsers
+      periodUsers: visits.periodUsers,
+      sub: visits.periodMissing ? PERIOD_USERS_MISSING_NOTE : null
     },
     {
       id: "genericClick",
@@ -240,8 +249,8 @@ type Pair<T = number> = { current: T | null; previous: T | null };
 export type SummaryBriefFacts = {
   from: string;
   to: string;
-  /** 방문자가 기간 전체를 한 번 센 값이면 period, 날짜별 합이면 daily_sum */
-  visitsBasis: "period" | "daily_sum";
+  /** 방문자가 기간 전체를 한 번 센 값이면 period, 이번에 그 값을 못 받았으면 missing (방문자는 null) */
+  visitsBasis: "period" | "missing";
   visits: Pair;
   genericClicks: Pair;
   /** 검색으로 온 방문 중 글로 바로 들어온 비율 (%) */
@@ -314,7 +323,8 @@ export function buildSummaryBriefFacts(
 
   const visits = visitsOf(bundle);
   const impressions = total(gsc, "impressions");
-  if (visits.current == null && impressions == null) return null;
+  // 기간 방문자만 못 받은 날(periodMissing)은 다른 숫자가 있으니 루나를 부른다. 방문자는 비워서 넘긴다
+  if (visits.current == null && !visits.periodMissing && impressions == null) return null;
 
   const impressionsPrev = total(gscPrev, "impressions");
   const clicks = total(gsc, "clicks");
@@ -327,7 +337,7 @@ export function buildSummaryBriefFacts(
   return {
     from: actualFrom,
     to: actualTo,
-    visitsBasis: visits.periodUsers ? "period" : "daily_sum",
+    visitsBasis: visits.periodUsers ? "period" : "missing",
     visits: { current: visits.current, previous: prev(visits.previous) },
     genericClicks: {
       current: genericClicksOf(bundle, "current"),

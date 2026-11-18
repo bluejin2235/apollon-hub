@@ -27,6 +27,7 @@ import {
   customerTextOf,
   fileSizeLabel,
   findInquiryFile,
+  inquiryDownloadUrl,
   inquiryFileKey,
   inquiryStatus,
   inquiryTitle,
@@ -213,18 +214,15 @@ function InquiryAttachments({ id }: { id: string }) {
 
   async function download(file: InquiryFile, index: number) {
     const key = inquiryFileKey(file, index);
-    // 주소를 받는 사이 팝업 차단에 걸리지 않게, 누른 순간 빈 창을 먼저 연다
-    const win = window.open("about:blank", "_blank");
-    if (win) win.opener = null;
     setBusy(key);
     const result = await getInquiryFiles(id);
     setBusy(null);
     if (result.ok) setFiles(result.data);
-    const url = result.ok
+    const found = result.ok
       ? findInquiryFile(result.data.items, { id: file.id, name: file.name, index })?.url
       : null;
+    const url = found ? inquiryDownloadUrl(found, file.name) : null;
     if (!url) {
-      win?.close();
       showToast({
         message: result.ok
           ? `「${file.name}」 파일을 찾지 못했습니다. 홈페이지 저장소를 확인해 주세요`
@@ -234,15 +232,15 @@ function InquiryAttachments({ id }: { id: string }) {
       });
       return;
     }
-    if (win) {
-      win.location.replace(url);
-      return;
-    }
-    showToast({
-      message: "브라우저가 새 창을 막았습니다. 이 사이트의 팝업을 허용한 뒤 다시 눌러 주세요",
-      tone: "warn",
-      durationMs: 6000
-    });
+    // 새 창을 열지 않고 지금 탭에서 주소를 연다. 주소에 download= 가 붙어 있어 화면은 그대로 두고 파일만 내려받는다.
+    // 새 창이 아니라서 팝업 차단에 걸리지 않는다
+    const link = document.createElement("a");
+    link.href = url;
+    link.rel = "noopener";
+    link.download = file.name;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
   }
 
   if (failed) {

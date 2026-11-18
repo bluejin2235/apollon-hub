@@ -16,6 +16,7 @@ import {
   visitCards,
   visitsAnswer
 } from "../../components/website/stats-v3/v3-visits-data";
+import { PERIOD_USERS_MISSING_NOTE } from "../../components/website/stats/stats-labels";
 import type { StatsBundle, StatsPoint } from "../../lib/website/stats";
 
 function ga(kind: string, date: string, extra: Partial<StatsPoint>): StatsPoint {
@@ -106,6 +107,20 @@ describe("v3 방문 패턴 카드", () => {
 
   it("앞 기간이 옛 사이트면 증감 없음", () => {
     for (const card of visitCards(bundleOf(true))) assert.equal(card.delta.delta, null);
+  });
+
+  it("기간 전체 방문자(period_users)를 못 받으면 날짜별 합(90명)으로 대신하지 않고 「—」와 알림", () => {
+    const strip = (bundle: StatsBundle) =>
+      Object.fromEntries(
+        Object.entries(bundle).map(([kind, value]) => [kind, { ...value, period_users: undefined }])
+      ) as unknown as StatsBundle;
+    const cards = new Map(visitCards(strip(bundleOf())).map((card) => [card.id, card]));
+    const visitors = cards.get("visitors");
+    assert.equal(visitors?.value, null);
+    assert.equal(visitors?.delta.delta, null);
+    assert.equal(visitors?.hint, PERIOD_USERS_MISSING_NOTE);
+    // 기간 값이 있으면 알림 없음
+    assert.equal(new Map(visitCards(bundleOf()).map((card) => [card.id, card])).get("visitors")?.hint, null);
   });
 
   it("추이는 지금 행동 화면 buildDepthTrend · buildDwellTrend 와 같은 값", () => {

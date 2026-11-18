@@ -255,7 +255,14 @@ export function V3Visits({ bundle, status, today, catalog }: V3ScreenProps) {
       <Flow bundle={bundle} status={status} catalog={catalog} today={today} />
       <div className="v3-metrics">
         {cards.map((item) => (
-          <Metric key={item.id} label={item.label} value={item.value} unit={item.unit} delta={item.delta} />
+          <Metric
+            key={item.id}
+            label={item.label}
+            value={item.value}
+            unit={item.unit}
+            delta={item.delta}
+            hint={item.hint ?? undefined}
+          />
         ))}
       </div>
       <Heat bundle={bundle} />

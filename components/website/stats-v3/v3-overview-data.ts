@@ -13,6 +13,8 @@ export type OverviewCard = {
   id: SummaryCardId;
   value: string | null;
   delta: DeltaView;
+  /** 칸 아래 짧은 알림. 지금은 방문자 칸에서 기간 방문자 수를 못 받았을 때만 쓴다 */
+  hint?: string | null;
 };
 
 /** 카드 다섯 칸. 응답에 값이 없는 칸(AI · 문의하기 누름이 옛 응답일 때)은 빠진다 — 화면이 「준비 중」으로 둔다 */
@@ -20,7 +22,12 @@ export function overviewCards(bundle: StatsBundle | null): Map<SummaryCardId, Ov
   return new Map(
     buildSummaryCards(bundle).map((card) => [
       card.id,
-      { id: card.id, value: card.value, delta: { delta: card.delta, tone: card.tone, previous: card.previous } }
+      {
+        id: card.id,
+        value: card.value,
+        delta: { delta: card.delta, tone: card.tone, previous: card.previous },
+        hint: card.id === "visit" ? (card.sub ?? null) : null
+      }
     ])
   );
 }
@@ -57,7 +64,8 @@ export function overviewAnswer(bundle: StatsBundle | null): { lead: string; em: 
   const visitPrev = prev(visits.previous);
 
   let lead: string;
-  if (visits.current == null) lead = "방문자 숫자가 아직 없고, ";
+  if (visits.periodMissing) lead = "이번에는 기간 방문자 수를 세지 못했고, ";
+  else if (visits.current == null) lead = "방문자 숫자가 아직 없고, ";
   else if (visitPrev == null || visitPrev === 0) lead = `방문자는 ${visits.current.toLocaleString("ko-KR")}명이었고, `;
   else {
     const rate = (visits.current - visitPrev) / visitPrev;

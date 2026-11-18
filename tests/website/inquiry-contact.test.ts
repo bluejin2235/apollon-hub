@@ -5,6 +5,7 @@ import {
   countMentionTokens,
   customerTextOf,
   findInquiryFile,
+  inquiryDownloadUrl,
   inquiryFileKey,
   inquiryStatus,
   inquiryTitle,
@@ -200,6 +201,21 @@ describe("첨부 id", () => {
     assert.equal(inquiryFileKey(old[1], 1), "name:a.pdf#1");
     assert.equal(findInquiryFile(old, { name: "a.pdf", index: 1 })?.url, "u2");
     assert.equal(findInquiryFile([old[1]], { name: "a.pdf", index: 1 })?.url, "u2");
+  });
+});
+
+describe("inquiryDownloadUrl", () => {
+  it("download= 가 있는 서명 주소는 그대로, 없으면 파일 이름으로 붙인다", () => {
+    const signed = "https://x.supabase.co/storage/v1/object/sign/inq/a.pdf?token=abc%2Bdef&download=%EA%B2%AC%EC%A0%81.pdf";
+    assert.equal(inquiryDownloadUrl(signed, "견적.pdf"), signed);
+    const bare = inquiryDownloadUrl("https://x.supabase.co/storage/v1/object/sign/inq/a.pdf?token=abc", "견적.pdf");
+    assert.equal(new URL(bare as string).searchParams.get("download"), "견적.pdf");
+    assert.equal(new URL(bare as string).searchParams.get("token"), "abc");
+  });
+
+  it("http(s) 가 아니거나 주소가 아니면 null: 지금 탭에서 열지 않는다", () => {
+    assert.equal(inquiryDownloadUrl("javascript:alert(1)", "a.pdf"), null);
+    assert.equal(inquiryDownloadUrl("u1", "a.pdf"), null);
   });
 });
 

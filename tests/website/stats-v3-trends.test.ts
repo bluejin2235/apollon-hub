@@ -4,7 +4,7 @@ import { describe, it } from "node:test";
 import "./stats-env";
 
 import { EMPTY_TITLES } from "../../components/website/stats/content-data";
-import { aiDayBucket, aiDayRanges, bucketRangeText } from "../../components/website/stats-v3/v3-ai-days";
+import { aiDayBucket, aiDayRanges, bucketRangeText, prevDayRanges } from "../../components/website/stats-v3/v3-ai-days";
 import { answerView } from "../../components/website/stats-v3/v3-answer-data";
 import { axisLabel, tickIndexes, valueSegments, xPercent } from "../../components/website/stats-v3/v3-chart";
 import { pageDaySeries } from "../../components/website/stats-v3/v3-content-data";
@@ -165,14 +165,27 @@ describe("검색 날짜별 · 숨긴 검색어 · 늦게 들어온 날", () => {
     });
   });
 
-  it("검색어 행이 11월 12일까지면 두 기간 모두 앞 2일(11월 11~12일 · 11월 4~5일)만 견준다", () => {
+  it("앞 기간 값은 같은 자리 날 값으로 마우스 상자에: 그 날 앞 기간 검색어 자료가 없으면 null", () => {
+    const split = brandSplitDays(bundle, "impressions");
+    assert.deepEqual(split.prevDates, ["2026-11-04", "2026-11-05", "2026-11-08"]);
+    assert.deepEqual(split.prevBrand, [1, null, null]);
+    assert.deepEqual(split.prevGeneric, [0, null, null]);
+    // 11월 4일 구글 합계 5 − 검색어별 1
+    assert.deepEqual(split.prevHidden, [4, null, null]);
+  });
+
+  it("두 기간 모두 검색어 자료가 있는 날 짝만 견준다: 11월 11일 ↔ 11월 4일 (11월 12일 ↔ 11월 5일은 앞 기간 자료 없음)", () => {
     assert.deepEqual(queryCoverage(bundle), {
+      dates: ["2026-11-11"],
+      prevDates: ["2026-11-04"],
       from: "2026-11-11",
-      to: "2026-11-12",
-      days: 2,
+      to: "2026-11-11",
+      days: 1,
       prevFrom: "2026-11-04",
-      prevTo: "2026-11-05"
+      prevTo: "2026-11-04",
+      currentDays: 2
     });
+    assert.deepEqual(trimQueriesToCoverage(bundle)?.query.current.map((row) => row.date), ["2026-11-11"]);
     const trimmed = trimQueriesToCoverage(bundle);
     assert.deepEqual(trimmed?.query.previous.map((row) => row.date), ["2026-11-04"]);
     // 11월 10일 9클릭이 빠져 회사 이름 클릭 앞 기간은 1
@@ -211,6 +224,8 @@ describe("검색 날짜별 · 숨긴 검색어 · 늦게 들어온 날", () => {
       target_keywords: { target_keywords: { rows: [{ keyword: "아폴론" }] } }
     } as unknown as StatsBundle;
     assert.deepEqual(targetKeywordDays(withTarget)?.current, [3, 0, null]);
+    // 앞 기간은 같은 자리 날(11월 4일 · 5일 · 8일). 검색어 자료가 있는 날은 11월 4일뿐
+    assert.deepEqual(targetKeywordDays(withTarget)?.previous, [1, null, null]);
   });
 });
 
@@ -434,5 +449,43 @@ describe("AI 답변에 나옴 표", () => {
     const q1 = view?.rows.find((row) => row.id === 1);
     assert.equal(q1?.cells[0].detailSent, false);
     assert.equal(q1?.cells[0].wrongNote, "협업사 빠짐");
+  });
+
+  it("AI마다 마지막 확인 날 · 전체 질문 중 확인한 수 · 적힌 틀린 내용 수", () => {
+    // 11월 10일에 Claude 만 따로 확인한 회차가 하나 더 있다. 질문 수는 마지막 회차 칸만 오므로 Claude 는 「모름」(null)
+    const withOlder: AiAnswerSummary = {
+      ...summary,
+      rounds: [...summary.rounds, { checked_on: "2026-11-10", services: ["claude"], checks: 2 }]
+    };
+    const view = answerView(withOlder);
+    assert.equal(view?.questionsTotal, 2);
+    assert.deepEqual(
+      view?.reliability.map((item) => [item.label, item.lastChecked, item.checked, item.total, item.wrong]),
+      [
+        ["ChatGPT", "2026-11-17", 2, 2, 1],
+        ["구글 검색 AI 요약", "2026-11-17", 2, 2, 0],
+        ["Perplexity", "2026-11-17", 1, 2, 0],
+        ["Claude", "2026-11-10", null, 2, null],
+        ["네이버", null, null, 2, null]
+      ]
+    );
+  });
+});
+
+describe("AI 날짜별 흐름: 같은 자리 앞 기간 칸", () => {
+  it("앞 기간 시작이 7일 앞이면 칸마다 7일 당긴다. 앞 기간 밖은 잘라 내고, 통째로 밖이면 null", () => {
+    const ranges = aiDayRanges("2026-11-11", "2026-11-13");
+    assert.deepEqual(prevDayRanges(ranges, "2026-11-11", "2026-11-04", "2026-11-05"), [
+      { from: "2026-11-04", to: "2026-11-04" },
+      { from: "2026-11-05", to: "2026-11-05" },
+      null
+    ]);
+    // 7일 묶음: 묶음 그대로 당기고 앞 기간 끝에서 자른다
+    const weeks = [{ from: "2026-10-01", to: "2026-10-07" }, { from: "2026-10-08", to: "2026-10-10" }];
+    assert.deepEqual(prevDayRanges(weeks, "2026-10-01", "2026-09-21", "2026-09-30"), [
+      { from: "2026-09-21", to: "2026-09-27" },
+      { from: "2026-09-28", to: "2026-09-30" }
+    ]);
+    assert.deepEqual(prevDayRanges(ranges, "2026-11-11", "", ""), [null, null, null]);
   });
 });

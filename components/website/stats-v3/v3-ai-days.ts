@@ -51,7 +51,27 @@ export type V3AiDays = {
   buckets: AiDayBucket[];
   /** 로봇 기록 시작일 */
   since?: string | null;
+  /** buckets 와 같은 자리의 앞 기간 칸(마우스 상자 비교용). 받지 않았거나 받기 실패면 null, 앞 기간 밖 칸은 null */
+  previous?: (AiDayBucket | null)[] | null;
+  /** previous 가 null 일 때 상자에 쓰는 까닭 */
+  previousReason?: string | null;
 };
+
+/**
+ * 이번 기간 칸과 같은 자리의 앞 기간 칸. 앞 기간 시작(prevFrom)이 이번 시작(from)보다 며칠 앞인지만큼 당긴다
+ * (prevDateOf 와 같은 규칙). 앞 기간 밖으로 나가는 쪽은 잘라 내고, 통째로 밖이면 null.
+ */
+export function prevDayRanges(ranges: AiDayRange[], from: string, prevFrom: string, prevTo: string): (AiDayRange | null)[] {
+  if (!from || !prevFrom || !prevTo || prevFrom > prevTo) return ranges.map(() => null);
+  const shift = inclusiveDays(prevFrom, from) - 1;
+  return ranges.map((range) => {
+    const start = addIsoDays(range.from, -shift);
+    const end = addIsoDays(range.to, -shift);
+    const a = start < prevFrom ? prevFrom : start;
+    const b = end > prevTo ? prevTo : end;
+    return a <= b ? { from: a, to: b } : null;
+  });
+}
 
 /** 묶음 칸의 두 날짜 — 「11월 1일~11월 7일 (7일)」. 하루 칸이면 그 날만 */
 export function bucketRangeText(bucket: AiDayRange, axis: (iso: string) => string): string {

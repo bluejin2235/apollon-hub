@@ -72,29 +72,53 @@ function bundleOf(oldSite = false): StatsBundle {
 }
 
 describe("v3 검색 — 회사 이름 · 일반 명사", () => {
-  it("buildBrandSplit 숫자 그대로, 일반 명사 클릭은 요약 카드와 같은 값", () => {
-    const groups = searchGroups(bundleOf());
+  it("견줄 앞 기간이 없으면(옛 사이트) buildBrandSplit 숫자 그대로, 일반 명사 클릭은 요약 카드와 같은 값, 증감 없이", () => {
+    const groups = searchGroups(bundleOf(true));
     assert.equal(groups?.brand.clicks, "6");
     assert.equal(groups?.brand.impressions, "23");
     assert.equal(groups?.generic.clicks, "3");
     assert.equal(groups?.generic.impressions, "52");
-    assert.equal(groups?.generic.clicks, String(genericClicksOf(bundleOf(), "current")));
-    assert.equal(groups?.brand.delta.previous, "3회");
-  });
-
-  it("앞 기간이 옛 사이트면 증감 없이", () => {
-    const groups = searchGroups(bundleOf(true));
+    assert.equal(groups?.generic.clicks, String(genericClicksOf(bundleOf(true), "current")));
     assert.equal(groups?.brand.delta.delta, null);
     assert.equal(groups?.generic.delta.delta, null);
   });
 
-  it("검색 기간 끝은 검색어 행이 있는 마지막 날, 앞 기간도 같은 날 수", () => {
+  it("두 기간 모두 검색어 자료가 있는 날 짝(11월 13일 ↔ 11월 10일)만 견준다", () => {
+    // 11월 12일의 같은 자리 앞 기간 날(11월 9일)은 검색어 자료가 없어 뺀다. 0 으로 셈하지 않는다
+    const groups = searchGroups(bundleOf());
+    assert.equal(groups?.brand.clicks, "1");
+    assert.equal(groups?.brand.impressions, "3");
+    assert.equal(groups?.generic.clicks, "1");
+    assert.equal(groups?.generic.impressions, "22");
+    assert.equal(groups?.brand.delta.previous, "3회");
+    assert.equal(groups?.generic.delta.previous, "0회");
+  });
+
+  it("검색 숫자 기간: 실제로 견준 날 수와 이번 기간 자료가 있는 날 수", () => {
     assert.deepEqual(searchRange(bundleOf()), {
-      from: "2026-11-12",
+      from: "2026-11-13",
       to: "2026-11-13",
-      prevFrom: "2026-11-09",
+      days: 1,
+      currentDays: 2,
+      prevFrom: "2026-11-10",
       prevTo: "2026-11-10"
     });
+    // 옛 사이트면 견주지 않고 이번 기간 자료가 있는 날 전부
+    assert.deepEqual(searchRange(bundleOf(true)), {
+      from: "2026-11-12",
+      to: "2026-11-13",
+      days: 2,
+      currentDays: 2,
+      prevFrom: null,
+      prevTo: null
+    });
+  });
+
+  it("검색어 자료가 하나도 없으면 0번이 아니라 자료 없음(null)", () => {
+    const empty = { ...bundleOf(), query: { ...bundleOf().query, current: [], previous: [] } } as unknown as StatsBundle;
+    assert.equal(searchGroups(empty), null);
+    assert.equal(searchRange(empty), null);
+    assert.equal(newQueries(empty), null);
   });
 
   it("일반 명사 클릭 추이 — 구글 일별 날짜 칸, 회사 이름은 빼고, 앞 기간은 비교 날짜로", () => {

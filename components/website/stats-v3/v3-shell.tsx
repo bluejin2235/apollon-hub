@@ -8,10 +8,10 @@
 import { useEffect, useMemo, useState, type ComponentType, type ReactNode } from "react";
 
 import { useStatsActionsLoader } from "@/components/website/stats/stats-actions";
-import { readActualRange } from "@/components/website/stats/stats-data";
+import { previousIsOldSite, readActualRange } from "@/components/website/stats/stats-data";
 import type { LoadStatus } from "@/components/website/stats/stats-slot";
 import { V3Ai } from "@/components/website/stats-v3/v3-ai";
-import { aiDayBucket, aiDayRanges, type V3AiDays } from "@/components/website/stats-v3/v3-ai-days";
+import { aiDayBucket, aiDayRanges, prevDayRanges, type V3AiDays } from "@/components/website/stats-v3/v3-ai-days";
 import { useV3Catalog } from "@/components/website/stats-v3/v3-catalog";
 import { V3Content } from "@/components/website/stats-v3/v3-content";
 import { V3Live } from "@/components/website/stats-v3/v3-live";
@@ -50,9 +50,29 @@ import {
  * 그래서 본 응답이 오기 전(range=null)에는 받지 않고 「불러오는 중」으로 둔다.
  * 받은 값이 어느 기간 것인지 같이 둔다. 기간을 바꾸면 새 응답 전까지 옛 기간 값을 보이지 않는다.
  */
-function useV3Extras(enabled: boolean, range: { from: string; to: string } | null, mainFailed = false): V3Extras {
+type ExtrasRange = {
+  from: string;
+  to: string;
+  /** 앞 기간(본 응답의 prev_from ~ prev_to). 모르면 빈 글 */
+  prevFrom: string;
+  prevTo: string;
+  /** 앞 기간이 새 홈페이지를 열기 전이면 앞 기간 칸은 받지 않는다 */
+  oldSite: boolean;
+};
+
+/** 앞 기간 칸을 받지 않을 때 마우스 상자에 쓰는 까닭. 받을 수 있으면 null */
+function previousSkipReason(range: ExtrasRange): string | null {
+  if (range.oldSite) return "앞 기간은 새 홈페이지를 열기 전";
+  if (!range.prevFrom || !range.prevTo) return "앞 기간 날짜를 알 수 없음";
+  return null;
+}
+
+function useV3Extras(enabled: boolean, range: ExtrasRange | null, mainFailed = false): V3Extras {
   const from = range?.from ?? "";
   const to = range?.to ?? "";
+  const prevFrom = range?.prevFrom ?? "";
+  const prevTo = range?.prevTo ?? "";
+  const oldSite = range?.oldSite ?? false;
   const key = `${from}|${to}`;
   const [answers, setAnswers] = useState<{ key: string; summary: AiAnswerSummary | null; ok: boolean } | null>(null);
   const [days, setDays] = useState<{ key: string; value: V3AiDays } | null>(null);
@@ -68,26 +88,42 @@ function useV3Extras(enabled: boolean, range: { from: string; to: string } | nul
       setAnswers({ key: at, summary: result.ok ? result.data : null, ok: result.ok });
     });
     const ranges = aiDayRanges(from, to);
-    void Promise.all(
-      ranges.map((range) => getStatsBundle({ from: range.from, to: range.to, kinds: ["bots", "ai_visits"], signal }))
-    ).then((results) => {
+    const fetchDay = (day: { from: string; to: string }) =>
+      getStatsBundle({ from: day.from, to: day.to, kinds: ["bots", "ai_visits"], signal });
+    // 같은 자리 앞 기간 칸: 마우스 상자에서 견줄 값. 받기 실패해도 이번 기간 그래프는 그린다
+    const skip = previousSkipReason({ from, to, prevFrom, prevTo, oldSite });
+    const prevRanges = skip ? null : prevDayRanges(ranges, from, prevFrom, prevTo);
+    const prevJob = prevRanges
+      ? Promise.all(prevRanges.map((day) => (day ? fetchDay(day) : Promise.resolve(null))))
+      : Promise.resolve(null);
+    void Promise.all([Promise.all(ranges.map(fetchDay)), prevJob]).then(([results, prevResults]) => {
       if (signal.aborted) return;
       if (results.some((result) => !result.ok)) {
         setDays({ key: at, value: { state: "error", buckets: [] } });
         return;
       }
       const bundles = results.map((result) => (result.ok ? result.data.bundle : null));
+      const prevFailed = prevResults != null && prevResults.some((result) => result != null && !result.ok);
+      const previous =
+        prevRanges && prevResults && !prevFailed
+          ? prevRanges.map((day, i) => {
+              const result = prevResults[i];
+              return day && result && result.ok ? aiDayBucket(day, result.data.bundle) : null;
+            })
+          : null;
       setDays({
         key: at,
         value: {
           state: "ready",
           buckets: ranges.map((range, i) => aiDayBucket(range, bundles[i])),
-          since: bundles.find((bundle) => bundle?.bots?.bots?.since)?.bots?.bots?.since ?? null
+          since: bundles.find((bundle) => bundle?.bots?.bots?.since)?.bots?.bots?.since ?? null,
+          previous,
+          previousReason: skip ?? (prevFailed ? "앞 기간 자료를 받지 못함" : null)
         }
       });
     });
     return () => controller.abort();
-  }, [enabled, from, to]);
+  }, [enabled, from, to, prevFrom, prevTo, oldSite]);
 
   const answersNow = range && answers && answers.key === key ? answers : null;
   const daysNow = range && days && days.key === key ? days.value : null;
@@ -257,9 +293,15 @@ export function V3Shell({ screen }: { screen: V3ScreenId }) {
   const bundleFresh = status === "ready" && bundleKey === `${from}|${to}`;
   const extrasFrom = bundleFresh ? (apiRange?.actualFrom ?? from) : null;
   const extrasTo = bundleFresh ? (apiRange?.actualTo ?? to) : null;
+  const extrasPrevFrom = bundleFresh ? (apiRange?.prevFrom ?? "") : "";
+  const extrasPrevTo = bundleFresh ? (apiRange?.prevTo ?? "") : "";
+  const extrasOldSite = bundleFresh ? previousIsOldSite(bundle) : false;
   const extrasRange = useMemo(
-    () => (extrasFrom && extrasTo ? { from: extrasFrom, to: extrasTo } : null),
-    [extrasFrom, extrasTo]
+    () =>
+      extrasFrom && extrasTo
+        ? { from: extrasFrom, to: extrasTo, prevFrom: extrasPrevFrom, prevTo: extrasPrevTo, oldSite: extrasOldSite }
+        : null,
+    [extrasFrom, extrasTo, extrasPrevFrom, extrasPrevTo, extrasOldSite]
   );
   const extras = useV3Extras(screen === "ai", extrasRange, status === "error");
   const markRange = apiRange

@@ -111,7 +111,8 @@ export function contentCards(bundle: StatsBundle | null): ContentCard[] {
     {
       id: "bounce",
       label: "금방 나간 비율",
-      hint: "10초 안에, 다른 페이지도 안 보고 나간 방문의 비율이에요. 낮을수록 좋아요.",
+      // 1 − GA4 참여율. GA4 는 10초 이상 머물렀거나, 주요 행동(핵심 이벤트)이 있었거나, 2페이지 이상 본 방문을 「참여」로 센다
+      hint: "사이트 전체 방문 중, 10초가 되기 전에 끝나고 다른 페이지도 안 보고 문의 접수 같은 주요 행동도 없었던 방문의 비율이에요. 낮을수록 좋아요.",
       value: pctNumber(bounce.current),
       unit: "%",
       delta: makeDelta(bounce.current, bounce.previous, "point", false, withUnit("%")(pctNumber(bounce.previous)))

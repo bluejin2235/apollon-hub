@@ -226,6 +226,12 @@ export function inquiryLeadText(count: number): string {
   return `실제 문의 ${count.toLocaleString("ko-KR")}건`;
 }
 
+/**
+ * 방문자 칸 아래 알림: 기간 전체 방문자(period_users)를 이번에 못 받았을 때.
+ * 날짜별 합으로 대신하면 다시 온 사람을 여러 번 세므로 숫자 대신 「—」와 이 줄을 쓴다.
+ */
+export const PERIOD_USERS_MISSING_NOTE = "이번에는 기간 방문자 수를 세지 못했어요.";
+
 /** 구글 검색 자료가 늦게 들어올 때의 안내. 2026-11-13 → 11월 13일 */
 export function gscUntilText(iso: string): string {
   const [, month, day] = iso.split("-").map(Number);

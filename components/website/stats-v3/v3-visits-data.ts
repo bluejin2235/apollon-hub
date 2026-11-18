@@ -38,6 +38,7 @@ import {
   prevGuard,
   previousByDate,
   ratioDelta,
+  visitorsNote,
   visitsOf,
   type When
 } from "@/components/website/stats-v3/v3-data";
@@ -47,7 +48,15 @@ const withUnit = (unit: string) => (value: string | null) => (value == null ? nu
 
 /* ─────────────────────── 카드 다섯 칸 ─────────────────────── */
 
-export type VisitCard = { id: string; label: string; value: string | null; unit: string; delta: DeltaView };
+export type VisitCard = {
+  id: string;
+  label: string;
+  value: string | null;
+  unit: string;
+  delta: DeltaView;
+  /** 칸 아래 짧은 알림 (방문자 칸 · 기간 방문자 수를 못 받았을 때) */
+  hint?: string | null;
+};
 
 export function visitCards(bundle: StatsBundle | null): VisitCard[] {
   const prev = prevGuard(bundle);
@@ -59,7 +68,14 @@ export function visitCards(bundle: StatsBundle | null): VisitCard[] {
   const entries = { current: articleEntriesOf(bundle, "current"), previous: prev(articleEntriesOf(bundle, "previous")) };
   const dwellParts = durationParts(dwell.current);
   return [
-    { id: "visitors", label: "방문자", value: intKo(visitors.current), unit: "명", delta: ratioDelta(visitors, (v) => withUnit("명")(intKo(v))) },
+    {
+      id: "visitors",
+      label: "방문자",
+      value: intKo(visitors.current),
+      unit: "명",
+      delta: ratioDelta(visitors, (v) => withUnit("명")(intKo(v))),
+      hint: visitorsNote(bundle)
+    },
     { id: "sessions", label: "방문 횟수", value: intKo(sessions.current), unit: "회", delta: ratioDelta(sessions, (v) => withUnit("회")(intKo(v))) },
     {
       id: "depth",
