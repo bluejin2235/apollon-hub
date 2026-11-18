@@ -18,6 +18,14 @@ import {
 } from "@/components/website/stats-v3/v3-data";
 import type { StatsBundle, StatsPoint, TargetKeywordsPayload } from "@/lib/website/stats";
 
+/**
+ * 설정 화면 목록 수 글. 목록을 아직 못 받았으면(불러오는 중 · 첫 요청 실패) null.
+ * 받기 전에 「0」을 보이면 정말 0개인 것처럼 읽히기 때문이다.
+ */
+export function listCountText(items: readonly unknown[] | null, count: number): string | null {
+  return items == null ? null : String(count);
+}
+
 /** 비교용: NFKC · 소문자 · 공백·문장부호·기호 뺌 (홈페이지와 같은 규칙) */
 export function normalizeKeyword(value: string): string {
   return value

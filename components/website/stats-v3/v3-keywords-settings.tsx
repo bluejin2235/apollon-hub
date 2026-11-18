@@ -8,7 +8,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 
-import { normalizeKeyword } from "@/components/website/stats-v3/v3-keywords-data";
+import { listCountText, normalizeKeyword } from "@/components/website/stats-v3/v3-keywords-data";
 import { Badge } from "@/components/website/stats-v3/v3-parts";
 import {
   addTargetKeywords,
@@ -297,7 +297,7 @@ export function V3KeywordsSettings() {
       <div className="v3-card">
         <div className="v3-card-head">
           <h2>
-            보이는 키워드 {active.length}개 / 목표 {GOAL}
+            보이는 키워드 {listCountText(items, active.length) != null ? `${active.length}개 ` : ""}/ 목표 {GOAL}
           </h2>
           <Link className="v3-tiny" href="/website/stats/search">
             검색 화면에서 순위 보기 →
@@ -311,7 +311,7 @@ export function V3KeywordsSettings() {
             aria-pressed={tab === "active"}
             onClick={() => setTab("active")}
           >
-            보이는 것 {active.length}
+            보이는 것{listCountText(items, active.length) != null ? ` ${active.length}` : ""}
           </button>
           <button
             type="button"
@@ -319,7 +319,7 @@ export function V3KeywordsSettings() {
             aria-pressed={tab === "removed"}
             onClick={() => setTab("removed")}
           >
-            내린 것 {removed.length}
+            내린 것{listCountText(items, removed.length) != null ? ` ${removed.length}` : ""}
           </button>
         </div>
         {loadError ? (

@@ -290,34 +290,43 @@ export function V3Shell({ screen }: { screen: V3ScreenId }) {
   const config = V3_SCREENS.find((item) => item.id === screen);
   const kinds = config?.kinds;
   const catalog = useV3Catalog(V3_NEEDS_CATALOG.includes(screen));
-  /** 본 응답이 어느 요청 기간 것인지. 기간을 바꾼 직후 옛 응답의 실제 기간으로 AI 자료를 받지 않게 */
-  const [bundleKey, setBundleKey] = useState<string | null>(null);
+  /**
+   * 날짜를 고칠 때마다 1씩 오르는 번호. 요청은 보낸 때의 번호를 달고, 응답(bundleSeq)이 지금 번호와 같을 때만 「지금 기간의 응답」이다.
+   * 날짜를 지웠다가 같은 날짜로 되돌려도 번호가 달라서 옛 응답을 다시 쓰지 않는다(새 요청의 응답을 기다린다)
+   */
+  const [inputSeq, setInputSeq] = useState(0);
+  /** 본 응답이 몇 번째 입력 때 보낸 요청의 것인지 */
+  const [bundleSeq, setBundleSeq] = useState<number | null>(null);
 
   useEffect(() => {
     if (!kinds || !from || !to || from > to) return;
     const controller = new AbortController();
-    const at = `${from}|${to}`;
+    const at = inputSeq;
     setStatus("loading");
     void getStatsBundle({ from, to, kinds, signal: controller.signal }).then((result) => {
       if (controller.signal.aborted) return;
       if (!result.ok) {
         setBundle(null);
-        setBundleKey(null);
+        // 실패도 몇 번째 입력의 실패인지 남긴다. 옛 입력의 실패를 새 입력에 보이지 않게
+        setBundleSeq(at);
         setSyncStatus(null);
         setStatus("error");
         return;
       }
       setBundle(result.data.bundle);
-      setBundleKey(at);
+      setBundleSeq(at);
       setSyncStatus(result.data.sync_status);
       setStatus("ready");
     });
     return () => controller.abort();
-  }, [from, to, kinds]);
+  }, [from, to, kinds, inputSeq]);
 
   const apiRange = readActualRange(bundle);
   // AI 날짜별 자료는 본 응답의 실제 기간으로 받는다. 옛 응답이라 실제 기간 칸이 없으면 고른 기간을 쓴다
-  const bundleFresh = status === "ready" && bundleKey === `${from}|${to}`;
+  /** 지금 상태(준비 · 실패)가 지금 입력 때 보낸 요청의 것인가 */
+  const statusCurrent = bundleSeq === inputSeq;
+  const bundleFresh = status === "ready" && statusCurrent;
+  const mainFailed = status === "error" && statusCurrent;
   const extrasFrom = bundleFresh ? (apiRange?.actualFrom ?? from) : null;
   const extrasTo = bundleFresh ? (apiRange?.actualTo ?? to) : null;
   const extrasPrevFrom = bundleFresh ? (apiRange?.prevFrom ?? "") : "";
@@ -330,7 +339,7 @@ export function V3Shell({ screen }: { screen: V3ScreenId }) {
         : null,
     [extrasFrom, extrasTo, extrasPrevFrom, extrasPrevTo, extrasLaunch]
   );
-  const extras = useV3Extras(screen === "ai", extrasRange, status === "error");
+  const extras = useV3Extras(screen === "ai", extrasRange, mainFailed);
   // 조치 기록도 옛 기간 응답의 실제 기간으로 받지 않는다. 새 응답 전에는 고른 날짜를 쓴다
   const markApi = bundleFresh ? apiRange : null;
   const markRange = markApi
@@ -341,12 +350,26 @@ export function V3Shell({ screen }: { screen: V3ScreenId }) {
   const actions = useStatsActionsLoader(today, bundleFresh ? bundle : null, markRange);
   const Screen = V3_SCREEN_PARTS[screen];
 
+  // 날짜가 실제로 바뀔 때만 입력 번호를 올린다
+  function changeFrom(value: string) {
+    if (value === from) return;
+    setFrom(value);
+    setInputSeq((n) => n + 1);
+  }
+  function changeTo(value: string) {
+    if (value === to) return;
+    setTo(value);
+    setInputSeq((n) => n + 1);
+  }
+
   function applyPreset(next: PeriodPresetId) {
     setPreset(next);
     if (next === "custom") return;
     const range = rangeForPreset(next, today);
+    if (range.from === from && range.to === to) return;
     setFrom(range.from);
     setTo(range.to);
+    setInputSeq((n) => n + 1);
   }
 
   // 맨 위 비교 줄 · 옛 사이트 알림: 지금 고른 기간의 응답이 왔을 때만 응답의 실제 기간을 쓴다.
@@ -363,7 +386,7 @@ export function V3Shell({ screen }: { screen: V3ScreenId }) {
       : from > to
         ? "시작 날짜가 끝 날짜보다 늦어요. 날짜를 다시 골라 주세요."
         : null;
-  const screenStatus: LoadStatus = bundleFresh ? status : status === "error" ? "error" : "loading";
+  const screenStatus: LoadStatus = bundleFresh ? status : mainFailed ? "error" : "loading";
 
   return (
     <V3Frame
@@ -379,8 +402,8 @@ export function V3Shell({ screen }: { screen: V3ScreenId }) {
           // GA 수집 안내도 지금 고른 기간의 응답이 왔을 때만. 그 전에는 옛 응답을 읽지 않는다
           syncStatus={bundleFresh ? syncStatus : null}
           onPreset={applyPreset}
-          onFrom={setFrom}
-          onTo={setTo}
+          onFrom={changeFrom}
+          onTo={changeTo}
         />
       }
     >

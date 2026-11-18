@@ -13,7 +13,7 @@
 
 import { useState, type KeyboardEvent } from "react";
 
-import type { ChartMark } from "@/components/website/stats-v3/v3-data";
+import { PREV_REASON, type ChartMark } from "@/components/website/stats-v3/v3-data";
 
 /** 11px 글자 폭 어림 — 한글은 글자 높이만큼, 그 밖은 절반 남짓 */
 function labelWidth(text: string): number {
@@ -316,6 +316,17 @@ export function reasonAt(reason: PrevReason | undefined, i: number): string | nu
   return typeof reason === "string" ? reason : (reason[i] ?? null);
 }
 
+/**
+ * 앞 기간 값이 없는 점의 상자 글.
+ * 아직 받는 중이거나 받지 못했으면 「앞 기간 자료 없음」이라고 쓰지 않고 그 상태를 그대로 쓴다.
+ * 그 밖의 까닭은 「앞 기간 자료 없음 (까닭)」, 까닭이 없으면 fallback.
+ */
+export function prevMissingText(reason: string | null, fallback: string): string {
+  if (!reason) return fallback;
+  if (reason === PREV_REASON.loading || reason === PREV_REASON.failed) return reason;
+  return `앞 기간 자료 없음 (${reason})`;
+}
+
 export type LineChartProps = {
   /** 점마다 가로축 글자 */
   labels: string[];
@@ -381,7 +392,7 @@ export function LineChart(props: LineChartProps) {
     lines.push(
       typeof before === "number"
         ? `${prevDay ?? "같은 순번 날"} · 앞 기간 ${tipFmt(before)}`
-        : `${prevDay ? `${prevDay} · ` : ""}${reasonAt(prevReason, i) ? `앞 기간 자료 없음 (${reasonAt(prevReason, i)})` : "앞 기간 기록 없음"}`
+        : `${prevDay ? `${prevDay} · ` : ""}${prevMissingText(reasonAt(prevReason, i), "앞 기간 기록 없음")}`
     );
     return { lines, keys: ["current", "previous"] as ChartSeries["look"][] };
   };
@@ -467,7 +478,7 @@ export function MultiLineChart({
       lines.push(
         anyPrev
           ? `앞 기간 견준 날 ${prevHead ?? "같은 자리 날"}`
-          : `${prevHead ? `${prevHead} · ` : ""}앞 기간 자료 없음${reasonAt(prevReason, i) ? ` (${reasonAt(prevReason, i)})` : ""}`
+          : `${prevHead ? `${prevHead} · ` : ""}${prevMissingText(reasonAt(prevReason, i), "앞 기간 자료 없음")}`
       );
       keys.push(null);
     }

@@ -29,7 +29,8 @@ const SourceContext = createContext<SourceState>("ready");
  */
 export function Source({ state, children }: { state: SourceState; children: ReactNode }) {
   const outer = useContext(SourceContext);
-  const value: SourceState = outer === "error" || state === "error" ? "error" : outer === "loading" || state === "loading" ? "loading" : "ready";
+  // 바깥이 준비 전이면 바깥 상태가 이긴다(바깥이 불러오는 중이면 안쪽이 실패여도 불러오는 중). 바깥이 준비됐을 때만 안쪽 상태
+  const value: SourceState = outer !== "ready" ? outer : state;
   return <SourceContext.Provider value={value}>{children}</SourceContext.Provider>;
 }
 
