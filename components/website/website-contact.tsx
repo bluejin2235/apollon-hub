@@ -3,13 +3,15 @@
 import { useCallback, useEffect, useState } from "react";
 import { showToast } from "@/components/website/toast";
 import { PrimaryBtn } from "@/components/website/work-editor-ui";
-import { listInquiries, updateInquiry } from "@/lib/website/api";
+import { getInquiryFiles, listInquiries, updateInquiry } from "@/lib/website/api";
 import { formatDotDate } from "@/lib/website/career";
 import {
   INQUIRY_FILTERS,
   budgetLabel,
+  fileSizeLabel,
   messagePreview,
   timelineLabel,
+  type InquiryFiles,
   type InquiryFilter,
   type InquiryItem,
   type InquiryList
@@ -22,6 +24,65 @@ function SummaryCard({ label, value }: { label: string; value: number }) {
     <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
       <p className="text-xs text-slate-500">{label}</p>
       <p className="mt-1 text-2xl font-semibold text-slate-900">{value}</p>
+    </div>
+  );
+}
+
+/** Let's Talk 첨부: 누를 때마다 새 내려받기 주소(10분)를 받아 연다 */
+function InquiryAttachments({ id }: { id: string }) {
+  const [files, setFiles] = useState<InquiryFiles | null>(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    void getInquiryFiles(id).then((result) => {
+      if (!alive) return;
+      if (result.ok) setFiles(result.data);
+      else setFailed(true);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [id]);
+
+  async function open(name: string) {
+    const result = await getInquiryFiles(id);
+    const url = result.ok ? result.data.items.find((file) => file.name === name)?.url : null;
+    if (!url) {
+      showToast({ message: "첨부를 열지 못했습니다", tone: "error" });
+      return;
+    }
+    window.open(url, "_blank", "noopener");
+  }
+
+  if (failed) return <p className="text-sm text-red-600">첨부 목록을 읽지 못했습니다</p>;
+  if (!files) return <p className="text-sm text-slate-400">첨부 확인 중…</p>;
+  if (files.items.length === 0 && files.missing.length === 0) {
+    return <p className="text-sm text-slate-400">첨부 없음</p>;
+  }
+  return (
+    <div className="space-y-2">
+      {files.items.length > 0 ? (
+        <ul className="space-y-1">
+          {files.items.map((file) => (
+            <li key={file.name} className="flex items-center justify-between gap-3 text-sm">
+              <span className="truncate text-slate-800">
+                {file.name} <span className="text-slate-400">{fileSizeLabel(file.size)}</span>
+              </span>
+              <button
+                type="button"
+                className="shrink-0 rounded-md border border-slate-200 px-2 py-1 text-xs text-slate-700 hover:bg-slate-50"
+                onClick={() => void open(file.name)}
+              >
+                내려받기
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      {files.missing.length > 0 ? (
+        <p className="text-sm text-amber-700">받지 못한 첨부: {files.missing.join(", ")}</p>
+      ) : null}
     </div>
   );
 }
@@ -90,6 +151,12 @@ function InquiryDetail({
       </div>
 
       <dl className="grid gap-3 text-sm sm:grid-cols-2">
+        {item.receipt_no ? (
+          <div className="sm:col-span-2">
+            <dt className="text-slate-500">접수번호</dt>
+            <dd className="mt-0.5 font-mono text-slate-900">{item.receipt_no}</dd>
+          </div>
+        ) : null}
         <div>
           <dt className="text-slate-500">받은 날짜</dt>
           <dd className="mt-0.5 text-slate-900">{formatDotDate(item.created_at)}</dd>
@@ -116,6 +183,13 @@ function InquiryDetail({
           {item.message || "—"}
         </pre>
       </div>
+
+      {item.receipt_no ? (
+        <div className="mt-4">
+          <p className="mb-1 text-sm text-slate-500">첨부</p>
+          <InquiryAttachments key={item.id} id={item.id} />
+        </div>
+      ) : null}
 
       <label className="mt-5 block">
         <span className="mb-1 block text-sm font-medium text-slate-700">내부 메모</span>

@@ -1,6 +1,7 @@
 import { supabase } from "@/lib/supabase/client";
 import type { JobPosting, TalentPoolList } from "@/lib/website/career";
 import type {
+  InquiryFiles,
   InquiryFilter,
   InquiryItem,
   InquiryList,
@@ -1170,6 +1171,11 @@ export function listInquiries(params?: {
 
 export function getInquiry(id: string): Promise<ApiResult<InquiryItem>> {
   return websiteFetch<InquiryItem>(`inquiries/${id}`);
+}
+
+/** Let's Talk 첨부 목록 + 10분짜리 내려받기 주소 */
+export function getInquiryFiles(id: string): Promise<ApiResult<InquiryFiles>> {
+  return websiteFetch<InquiryFiles>(`inquiries/${id}/files`);
 }
 
 export function updateInquiry(

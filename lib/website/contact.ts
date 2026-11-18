@@ -15,7 +15,20 @@ export type InquiryItem = {
   replied_at: string | null;
   memo: string | null;
   created_at: string;
+  /** Let's Talk 접수번호. 옛 문의 양식은 null (홈페이지가 아직 안 주면 없음) */
+  receipt_no?: string | null;
+  submit_state?: string | null;
+  missing_files?: string[] | null;
 };
+
+export type InquiryFile = { name: string; size: number; url: string | null };
+export type InquiryFiles = { items: InquiryFile[]; missing: string[] };
+
+export function fileSizeLabel(bytes: number): string {
+  if (bytes < 100 * 1024) return `${Math.max(1, Math.round(bytes / 1024))}KB`;
+  const mb = bytes / (1024 * 1024);
+  return mb >= 10 ? `${Math.round(mb)}MB` : `${Math.round(mb * 10) / 10}MB`;
+}
 
 export type InquiryList = {
   items: InquiryItem[];
