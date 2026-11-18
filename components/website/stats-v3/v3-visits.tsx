@@ -9,7 +9,7 @@ import { useMemo } from "react";
 
 import { titlesOf } from "@/components/website/stats-v3/v3-content-data";
 import { axisLabel, LineChart } from "@/components/website/stats-v3/v3-chart";
-import { durationText } from "@/components/website/stats-v3/v3-data";
+import { durationText, prevDatesOf } from "@/components/website/stats-v3/v3-data";
 import {
   Badge,
   Change,
@@ -17,21 +17,24 @@ import {
   HBars,
   Intro,
   LangBadge,
-  List,
   Metric,
   PrepBadge,
+  SourceLegend,
+  Stack,
   StatusLine,
   type HBarRow
 } from "@/components/website/stats-v3/v3-parts";
-import { rangeText } from "@/components/website/stats-v3/v3-period";
+import { dayText, rangeText } from "@/components/website/stats-v3/v3-period";
 import type { V3ScreenProps } from "@/components/website/stats-v3/v3-screens";
 import {
   countryBars,
   depthTrend,
   deviceBars,
   dwellTrend,
-  landingTop,
+  entryRows,
+  exitRows,
   newReturningBars,
+  PAGE_EXIT_SINCE,
   outcomes,
   visitCards,
   visitsAnswer,
@@ -167,7 +170,10 @@ function MiniStat({
   unit,
   card,
   trend,
-  format
+  format,
+  tipFormat,
+  tipUnit,
+  bundle
 }: {
   title: string;
   value: string | null;
@@ -175,6 +181,9 @@ function MiniStat({
   card: ReturnType<typeof visitCards>[number] | undefined;
   trend: MiniTrend;
   format: (value: number) => string;
+  tipFormat?: (value: number) => string;
+  tipUnit?: string;
+  bundle: V3ScreenProps["bundle"];
 }) {
   return (
     <div className="v3-mini-stat">
@@ -190,9 +199,13 @@ function MiniStat({
         <LineChart
           mini
           labels={trend.dates.map(axisLabel)}
+          dates={trend.dates}
+          prevDates={prevDatesOf(bundle, trend.dates)}
           current={trend.current}
           previous={trend.previous}
           format={format}
+          tipFormat={tipFormat}
+          unit={tipUnit}
           ariaLabel={`${title} 이번 기간과 앞 기간 추이`}
         />
       ) : (
@@ -210,7 +223,6 @@ export function V3Visits({ bundle, status, today, catalog }: V3ScreenProps) {
   const year = Number(today.slice(0, 4));
   const cards = useMemo(() => visitCards(bundle), [bundle]);
   const card = (id: string) => cards.find((item) => item.id === id);
-  const landings = useMemo(() => landingTop(bundle, titlesOf(catalog)), [bundle, catalog]);
   const depth = useMemo(() => depthTrend(bundle), [bundle]);
   const dwell = useMemo(() => dwellTrend(bundle), [bundle]);
   const people = useMemo(() => newReturningBars(bundle), [bundle]);
@@ -227,7 +239,7 @@ export function V3Visits({ bundle, status, today, catalog }: V3ScreenProps) {
     <>
       <Intro
         menu="방문 패턴"
-        question="언제 오고, 어떻게 돌아다니나요?"
+        question="어디로 들어와서, 어떻게 돌아다니고, 어디로 나가나요?"
         answer={
           answer ? (
             <>
@@ -240,6 +252,7 @@ export function V3Visits({ bundle, status, today, catalog }: V3ScreenProps) {
           )
         }
       />
+      <Flow bundle={bundle} status={status} catalog={catalog} today={today} />
       <div className="v3-metrics">
         {cards.map((item) => (
           <Metric key={item.id} label={item.label} value={item.value} unit={item.unit} delta={item.delta} />
@@ -247,35 +260,7 @@ export function V3Visits({ bundle, status, today, catalog }: V3ScreenProps) {
       </div>
       <Heat bundle={bundle} />
       <div className="v3-card">
-        <div className="v3-two">
-          <div>
-            <h2>들어온 페이지 상위 5개</h2>
-            {status === "ready" ? (
-              <List
-                items={landings.map((row) => ({
-                  key: row.path,
-                  name: (
-                    <>
-                      {row.title} <LangBadge lang={row.lang} />
-                    </>
-                  ),
-                  value: `${row.sessions.toLocaleString("ko-KR")}회`,
-                  change: row.delta
-                }))}
-              />
-            ) : (
-              <StatusLine status={status} />
-            )}
-          </div>
-          <div>
-            <div className="v3-card-head">
-              <h2>
-                나간 페이지 상위 5개 <PrepBadge />
-              </h2>
-            </div>
-            <p className="v3-tiny">—</p>
-          </div>
-        </div>
+        <h2>한 번 와서 얼마나 보나요?</h2>
         <div className="v3-mini-stats">
           <MiniStat
             title="한 번에 본 페이지 수"
@@ -284,6 +269,8 @@ export function V3Visits({ bundle, status, today, catalog }: V3ScreenProps) {
             card={card("depth")}
             trend={depth}
             format={(v) => v.toFixed(1)}
+            tipFormat={(v) => `${v.toFixed(1)}개`}
+            bundle={bundle}
           />
           <MiniStat
             title="평균 머문 시간"
@@ -292,6 +279,8 @@ export function V3Visits({ bundle, status, today, catalog }: V3ScreenProps) {
             card={dwellCard}
             trend={dwell}
             format={(v) => durationText(v) ?? ""}
+            tipFormat={(v) => durationText(v) ?? ""}
+            bundle={bundle}
           />
         </div>
       </div>
@@ -338,5 +327,88 @@ export function V3Visits({ bundle, status, today, catalog }: V3ScreenProps) {
         </div>
       </div>
     </>
+  );
+}
+
+/** 맨 위 — 어디로 들어와서 어디로 나갔나. 들어온 곳은 GA 첫 페이지, 나간 곳은 우리 코드로 모으는 page_exit */
+function Flow({ bundle, status, catalog, today }: Pick<V3ScreenProps, "bundle" | "status" | "catalog" | "today">) {
+  const year = Number(today.slice(0, 4));
+  const entries = useMemo(() => entryRows(bundle, titlesOf(catalog)), [bundle, catalog]);
+  const exits = useMemo(() => exitRows(bundle, titlesOf(catalog)), [bundle, catalog]);
+  const range = readActualRange(bundle);
+  const exitStartsLate = range ? range.actualFrom < PAGE_EXIT_SINCE : true;
+  return (
+    <div className="v3-card">
+      <div className="v3-card-head">
+        <h2>어디로 들어와서 어디로 나갔나</h2>
+        {range ? <span className="v3-tiny">{rangeText(range.actualFrom, range.actualTo, year)}</span> : null}
+      </div>
+      {status !== "ready" ? (
+        <StatusLine status={status} />
+      ) : (
+        <div className="v3-flow">
+          <div>
+            <h3>처음 들어온 페이지</h3>
+            <p className="v3-tiny">
+              방문이 시작된 페이지 · 전체 {entries.total.toLocaleString("ko-KR")}회 중 몫 · 막대는 어디서 왔는지
+            </p>
+            {entries.rows.length === 0 ? (
+              <p className="v3-tiny">이 기간에는 값이 없어요.</p>
+            ) : (
+              entries.rows.map((row) => (
+                <div className="v3-flow-row" key={row.path}>
+                  <span>
+                    {row.title} <LangBadge lang={row.lang} />
+                    <small>
+                      {row.sources
+                        ? `검색 ${row.sources[0]}% · AI ${row.sources[1]}% · 직접 ${row.sources[2]}% · 기타 ${row.sources[3]}%`
+                        : "어디서 왔는지 기록 없음"}
+                    </small>
+                  </span>
+                  {row.sources ? <Stack parts={row.sources} /> : <span />}
+                  <b>
+                    {row.sessions.toLocaleString("ko-KR")}회<small>{row.share}%</small>
+                  </b>
+                </div>
+              ))
+            )}
+            <SourceLegend />
+            {entries.unknown > 0 ? (
+              <p className="v3-tiny">GA가 첫 페이지를 남기지 못한 방문 {entries.unknown.toLocaleString("ko-KR")}회는 목록에서 뺐어요.</p>
+            ) : null}
+          </div>
+          <div>
+            <h3>마지막으로 보고 나간 페이지</h3>
+            {exits.rows.length === 0 ? (
+              <div className="v3-empty-slot">
+                <strong>나간 페이지는 {dayText(PAGE_EXIT_SINCE, year)}부터 모읍니다</strong>
+                <p className="v3-tiny">
+                  방문자가 사이트를 떠날 때 마지막으로 본 페이지를 우리 코드로 기록해요. 그 앞 기간은 기록이 없어 비어
+                  있어요(0이 아니에요). 어림한 숫자는 넣지 않아요.
+                </p>
+              </div>
+            ) : (
+              <>
+                <p className="v3-tiny">방문이 끝난 페이지 · 전체 {exits.total.toLocaleString("ko-KR")}회 중 몫</p>
+                {exits.rows.map((row) => (
+                  <div className="v3-flow-row" key={row.path}>
+                    <span>
+                      {row.title} <LangBadge lang={row.lang} />
+                    </span>
+                    <span />
+                    <b>
+                      {row.exits.toLocaleString("ko-KR")}회<small>{row.share}%</small>
+                    </b>
+                  </div>
+                ))}
+                {exitStartsLate ? (
+                  <p className="v3-tiny">{dayText(PAGE_EXIT_SINCE, year)} 앞 날짜는 기록이 없어 빠져 있어요.</p>
+                ) : null}
+              </>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
   );
 }

@@ -1049,10 +1049,6 @@
   font-size: 25px;
 }
 
-.v3 .v3-mini-stat svg text {
-  font-size: 13px;
-}
-
 .v3-conversion {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
@@ -1312,4 +1308,406 @@
   margin-top: 5px;
   font: inherit;
   background: #fff;
+}
+
+/* ─────────── 추이 그래프 (글자는 늘 실제 크기 · 마우스 상자) ─────────── */
+
+.v3-chart-box {
+  display: flex;
+  align-items: stretch;
+  min-width: 0;
+}
+
+.v3 svg.v3-chart-y {
+  flex: none;
+  width: 38px;
+}
+
+.v3 svg.v3-chart-plot {
+  flex: 1;
+  min-width: 0;
+  width: auto;
+  outline: none;
+}
+
+.v3 svg.v3-chart-plot:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
+}
+
+.v3 .v3-chart-box svg text {
+  font-size: 11px;
+}
+
+.v3-grid-line {
+  stroke: #edf0f3;
+}
+
+.v3-mark-line {
+  stroke: #a2abb4;
+  stroke-dasharray: 4 4;
+}
+
+.v3-ser-area {
+  fill: #edf3f5;
+}
+
+.v3-ser-cur,
+.v3-ser-prev,
+.v3-ser {
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.v3-ser-cur {
+  stroke: #477b9f;
+  stroke-width: 2.3;
+}
+
+.v3-ser-prev {
+  stroke: #a2aab5;
+  stroke-width: 1.5;
+  stroke-dasharray: 5 4;
+}
+
+.v3-ser {
+  stroke-width: 2;
+}
+
+.v3-ser-0 {
+  stroke: #477b9f;
+}
+
+.v3-ser-1 {
+  stroke: #b88b40;
+}
+
+.v3-ser-2 {
+  stroke: #8975aa;
+}
+
+.v3-ser-3 {
+  stroke: #357f77;
+}
+
+.v3-ser-4 {
+  stroke: #c0606a;
+}
+
+.v3-ser-5 {
+  stroke: #7d8691;
+}
+
+.v3 circle.v3-dot-pt {
+  fill: #fff;
+  stroke-width: 1.7;
+  stroke-dasharray: none;
+}
+
+.v3 .v3-hit {
+  fill: transparent;
+  cursor: pointer;
+}
+
+.v3 .v3-chart-box text.v3-tick-on {
+  fill: var(--ink);
+  font-weight: 700;
+}
+
+.v3-tip-guide {
+  stroke: #c3c9d0;
+}
+
+.v3-tip-box {
+  fill: #fff;
+  stroke: #d5dae0;
+}
+
+.v3 .v3-chart-box text.v3-tip-head,
+.v3 .v3-chart-box text.v3-tip-text {
+  fill: var(--ink);
+  font-size: 12px;
+}
+
+.v3 .v3-chart-box text.v3-tip-head {
+  font-weight: 700;
+}
+
+.v3-key-0 {
+  border-top-color: #477b9f;
+}
+
+.v3-key-1 {
+  border-top-color: #b88b40;
+}
+
+.v3-key-2 {
+  border-top-color: #8975aa;
+}
+
+.v3-key-3 {
+  border-top-color: #357f77;
+}
+
+.v3-key-4 {
+  border-top-color: #c0606a;
+}
+
+.v3-key-5 {
+  border-top-color: #7d8691;
+}
+
+.v3-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+/* ─────────── 숫자 한 줄 설명 ─────────── */
+
+.v3-metric-hint {
+  font-size: 11px;
+  color: var(--muted);
+  line-height: 1.5;
+  margin: -2px 0 6px;
+}
+
+.v3-head-help {
+  font-size: 11px;
+  color: var(--muted);
+  margin: -6px 0 12px;
+  line-height: 1.7;
+}
+
+.v3-head-help b {
+  color: #4b525c;
+  font-weight: 500;
+}
+
+/* ─────────── 추이 카드 (검색 · AI) ─────────── */
+
+.v3-trends {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  margin-bottom: 20px;
+}
+
+.v3-trend {
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  padding: 18px 18px 14px;
+  min-width: 0;
+}
+
+.v3-trend-wide {
+  grid-column: 1 / -1;
+}
+
+.v3-trend-fact {
+  font-size: 14px;
+  font-weight: 500;
+  margin: 6px 0 4px;
+  line-height: 1.5;
+}
+
+.v3-trend-fact.up {
+  color: var(--teal);
+}
+
+.v3-trend-fact.down {
+  color: #b35454;
+}
+
+.v3-fair {
+  display: inline-block;
+  font-size: 11px;
+  border-radius: 5px;
+  padding: 1px 7px;
+  margin-right: 6px;
+  background: #eef4ef;
+  color: #3d6b49;
+}
+
+.v3-fair.no {
+  background: #f6efe4;
+  color: #8a6326;
+}
+
+.v3-trend-note {
+  font-size: 11px;
+  color: var(--muted);
+  margin: 2px 0 10px;
+  line-height: 1.6;
+}
+
+.v3-section-title {
+  margin: 4px 0 10px;
+}
+
+/* ─────────── AI 회사별 막대 ─────────── */
+
+.v3-cbar {
+  display: grid;
+  grid-template-columns: minmax(24px, 1fr) 52px 62px;
+  gap: 8px;
+  align-items: center;
+  margin: 8px 0;
+  font-size: 11px;
+}
+
+.v3-cbar > span:first-child {
+  grid-column: 1 / -1;
+  margin-bottom: -4px;
+}
+
+.v3-cbar small {
+  margin-left: 6px;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.v3-cbar b {
+  text-align: right;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.v3-group-label {
+  font-size: 11px;
+  color: var(--muted);
+  margin: 14px 0 2px;
+}
+
+/* ─────────── 답에 씀 표 ─────────── */
+
+.v3 .v3-cell-button {
+  border: 0;
+  background: none;
+  padding: 2px 6px;
+  border-radius: 5px;
+  font-size: 12px;
+  color: var(--teal);
+  text-decoration: underline dotted;
+}
+
+.v3 .v3-cell-button[aria-expanded="true"] {
+  background: #e6f0ee;
+}
+
+.v3-unchecked {
+  color: #a0a6ae;
+  font-size: 9px;
+}
+
+.v3 .v3-ai-table td.v3-answer-detail {
+  text-align: left;
+  background: #f7f9fa;
+  font-size: 11px;
+  padding: 10px 12px;
+}
+
+.v3-answer-detail p + p,
+.v3-answer-detail ul {
+  margin-top: 6px;
+}
+
+.v3-answer-detail ul {
+  padding-left: 16px;
+}
+
+.v3-quote {
+  border-left: 3px solid #cfd8dd;
+  padding-left: 9px;
+  color: #3f454d;
+  white-space: pre-wrap;
+}
+
+.v3-th-note {
+  display: block;
+  font-weight: 400;
+  color: var(--muted);
+}
+
+/* ─────────── 방문 패턴 · 들어온 곳 나간 곳 ─────────── */
+
+.v3-flow {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+  gap: 22px;
+}
+
+.v3-flow > div + div {
+  border-left: 1px solid var(--line);
+  padding-left: 22px;
+}
+
+.v3-flow-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 90px 70px;
+  gap: 10px;
+  align-items: center;
+  padding: 8px 0;
+  border-bottom: 1px solid #f0f2f4;
+  font-size: 12px;
+}
+
+.v3-flow-row b {
+  text-align: right;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.v3-flow-row small {
+  display: block;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.v3-empty-slot {
+  border: 1px dashed #c9cfd6;
+  border-radius: 8px;
+  padding: 16px;
+  background: #fafbfc;
+}
+
+.v3-empty-slot strong {
+  display: block;
+  font-size: 14px;
+  margin-bottom: 6px;
+}
+
+@container v3 (max-width: 585px) {
+  .v3-trends,
+  .v3-flow {
+    grid-template-columns: 1fr;
+  }
+
+  .v3-flow > div + div {
+    border-left: 0;
+    padding-left: 0;
+    border-top: 1px solid var(--line);
+    padding-top: 15px;
+  }
+}
+
+/* AI 화면 — 읽어 갔나 · 사람이 왔나는 나란히, 답변에 나오나는 표가 넓어 한 줄 전체 */
+
+.v3 .v3-ai-grid {
+  grid-template-columns: 1fr 1fr;
+}
+
+.v3 .v3-ai-grid > .v3-ai-wide {
+  grid-column: 1 / -1;
+}
+
+@container v3 (max-width: 585px) {
+  .v3 .v3-ai-grid {
+    grid-template-columns: 1fr;
+  }
 }

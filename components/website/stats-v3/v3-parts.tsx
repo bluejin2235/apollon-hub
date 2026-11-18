@@ -57,9 +57,11 @@ export type MetricProps = {
   delta?: DeltaView | null;
   /** 데이터가 없는 칸 — 「준비 중」 배지 + 「—」 */
   prep?: boolean;
+  /** 이 숫자가 무엇인지 한 줄 */
+  hint?: ReactNode;
 };
 
-export function Metric({ label, value, unit, delta, prep }: MetricProps) {
+export function Metric({ label, value, unit, delta, prep, hint }: MetricProps) {
   return (
     <div className="v3-metric">
       <div className="v3-metric-label">
@@ -69,6 +71,7 @@ export function Metric({ label, value, unit, delta, prep }: MetricProps) {
         {prep || value == null ? "—" : value}
         {!prep && value != null ? <span className="v3-unit">{unit}</span> : null}
       </div>
+      {hint ? <p className="v3-metric-hint">{hint}</p> : null}
       {!prep && delta ? <DeltaBlock delta={delta} /> : null}
     </div>
   );
@@ -200,4 +203,32 @@ export function StatusLine({ status, empty }: { status: "loading" | "ready" | "e
   if (status === "loading") return <p className="v3-tiny">불러오는 중입니다</p>;
   if (status === "error") return <p className="v3-tiny">불러오지 못했습니다. 잠시 뒤 다시 열어 주세요.</p>;
   return <p className="v3-tiny">{empty ?? "이 기간에는 값이 없습니다."}</p>;
+}
+
+/** 추이 카드 — 제목 · 사실 한 문장 · 비교가 공정한지 · 그래프 */
+export function TrendCard({
+  title,
+  fact,
+  note,
+  wide,
+  children
+}: {
+  title: string;
+  fact: { tone: "up" | "down" | "flat" | "none"; text: string; fair: boolean; fairText: string };
+  note?: ReactNode;
+  wide?: boolean;
+  children?: ReactNode;
+}) {
+  return (
+    <div className={wide ? "v3-trend v3-trend-wide" : "v3-trend"}>
+      <h2>{title}</h2>
+      <p className={`v3-trend-fact ${fact.tone}`}>{fact.text}</p>
+      <p className="v3-trend-note">
+        <span className={fact.fair ? "v3-fair" : "v3-fair no"}>{fact.fair ? "앞 기간과 견줄 수 있음" : "앞 기간과 견줄 수 없음"}</span>
+        {fact.fairText}
+        {note ? <> {note}</> : null}
+      </p>
+      {children}
+    </div>
+  );
 }

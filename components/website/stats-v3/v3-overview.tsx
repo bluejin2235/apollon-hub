@@ -15,7 +15,7 @@ import { loadSummaryBrief } from "@/components/website/stats/summary-brief-cache
 import type { SummaryCardId } from "@/components/website/stats/stats-labels";
 import type { StatsData } from "@/components/website/stats/stats-slot";
 import { axisLabel, LineChart } from "@/components/website/stats-v3/v3-chart";
-import { actionsInRange, chartMarks, markDate, visitsOf } from "@/components/website/stats-v3/v3-data";
+import { actionsInRange, chartMarks, markDate, prevDatesOf, visitsOf } from "@/components/website/stats-v3/v3-data";
 import { briefLines, overviewAnswer, overviewCards, overviewTrend } from "@/components/website/stats-v3/v3-overview-data";
 import { Intro, Metric, PrepBadge, StatusLine } from "@/components/website/stats-v3/v3-parts";
 import { dayText, rangeText } from "@/components/website/stats-v3/v3-period";
@@ -75,8 +75,11 @@ function VisitTrend({ bundle, status, actions, today }: Pick<V3ScreenProps, "bun
       ) : (
         <LineChart
           labels={trend.dates.map(axisLabel)}
+          dates={trend.dates}
+          prevDates={prevDatesOf(bundle, trend.dates)}
           current={trend.current}
           previous={trend.previous}
+          unit="명"
           marks={marks}
           ariaLabel="방문자 이번 기간과 앞 기간 추이 및 조치 기록"
         />

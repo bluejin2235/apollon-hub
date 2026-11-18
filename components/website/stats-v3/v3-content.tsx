@@ -22,7 +22,7 @@ import {
   type MoveRow,
   type SortKey
 } from "@/components/website/stats-v3/v3-content-data";
-import { durationText, intKo, pctNumber } from "@/components/website/stats-v3/v3-data";
+import { durationText, intKo, pctNumber, prevDatesOf } from "@/components/website/stats-v3/v3-data";
 import { dwellByPath, hasQueryPage, queriesForPath } from "@/components/website/stats-v3/v3-fill-data";
 import {
   Badge,
@@ -88,21 +88,24 @@ function Detail({ row, bundle, year }: { row: ContentRow; bundle: StatsBundle | 
             <h3>
               {row.title} · {many ? "날짜별 추이" : "하루 추이"} {many ? null : <PrepBadge />}
             </h3>
-            <p className="v3-tiny">{first ? `${rangeText(first, last, year)} · 조회` : "조회"}</p>
+            <p className="v3-tiny">{first ? `${rangeText(first, last, year)} · 이 페이지를 연 횟수` : "이 페이지를 연 횟수"}</p>
             {many ? (
               <LineChart
                 mini
                 labels={series.dates.map(axisLabel)}
+                dates={series.dates}
+                prevDates={prevDatesOf(bundle, series.dates)}
                 current={series.current}
                 previous={series.previous}
-                ariaLabel={`${row.title} 조회 이번 기간과 앞 기간 추이`}
+                unit="회"
+                ariaLabel={`${row.title} 연 횟수 이번 기간과 앞 기간 추이`}
               />
             ) : (
               <div className="v3-chart-empty">—</div>
             )}
           </div>
           <div>
-            <h3>이 글로 들어온 검색어{hasQueries ? null : <> <PrepBadge /></>}</h3>
+            <h3>이 페이지로 들어온 구글 검색어{hasQueries ? null : <> <PrepBadge /></>}</h3>
             <ul className="v3-list">
               {queries.length === 0 ? (
                 <li>
@@ -114,7 +117,7 @@ function Detail({ row, bundle, year }: { row: ContentRow; bundle: StatsBundle | 
                   <li key={item.query}>
                     <span>{item.query}</span>
                     <span className="v3-val">
-                      {item.impressions.toLocaleString("ko-KR")}회 노출 · {item.clicks.toLocaleString("ko-KR")}회 클릭
+                      {item.impressions.toLocaleString("ko-KR")}번 보임 · {item.clicks.toLocaleString("ko-KR")}번 눌림
                     </span>
                   </li>
                 ))
@@ -123,9 +126,9 @@ function Detail({ row, bundle, year }: { row: ContentRow; bundle: StatsBundle | 
             <p className="v3-tiny">
               {hasQueries
                 ? queries.length === 0
-                  ? "이 기간에 이 글로 들어온 구글 검색어가 없습니다."
-                  : "구글 검색 기준 · 클릭 많은 순"
-                : "검색어와 페이지를 함께 받기 시작하면 표시합니다."}
+                  ? "이 기간에 이 페이지로 들어온 구글 검색어가 없어요."
+                  : "구글 검색 기준 · 많이 눌린 순 · 구글 자료는 2~3일 늦게 들어와요"
+                : "검색어와 페이지를 함께 받기 시작하면 보여요."}
             </p>
           </div>
         </div>
@@ -187,21 +190,26 @@ function ContentTable({ rows, bundle, year }: { rows: ContentRow[]; bundle: Stat
         ))}
       </div>
       <div className="v3-card-head">
-        <span className="v3-tiny">제목을 누르면 자세히 볼 수 있어요</span>
+        <span className="v3-tiny">제목을 누르면 날짜별 흐름과 들어온 검색어를 볼 수 있어요</span>
         <SourceLegend />
       </div>
+      <p className="v3-head-help">
+        <b>연 횟수</b>: 이 페이지를 연 횟수 · <b>머문 시간</b>: 이 페이지에 머문 평균 시간 · <b>여기서 시작한 방문</b>: 이
+        페이지로 사이트에 처음 들어온 횟수 · <b>어디서 왔나</b>: 여기서 시작한 방문이 온 곳(검색 · AI · 주소를 직접 입력 · 기타) ·{" "}
+        <b>금방 나간 비율</b>: 여기서 시작해 10초 안에, 다른 페이지도 안 보고 나간 비율(낮을수록 좋음)
+      </p>
       <div className="v3-table-wrap">
         <table>
           <thead>
             <tr>
               <th>순위</th>
               <th>제목</th>
-              <SortHead id="views" label="조회" sortKey={sortKey} ascending={ascending} onSort={sortBy} />
-              <th className="v3-num">평균 머문 시간{dwell ? null : <> <PrepBadge /></>}</th>
-              <SortHead id="entries" label="여기로 들어온 수" sortKey={sortKey} ascending={ascending} onSort={sortBy} />
-              <th>주로 어디서</th>
-              <SortHead id="bounce" label="그냥 나간 비율" sortKey={sortKey} ascending={ascending} onSort={sortBy} />
-              <th className="v3-num">증감</th>
+              <SortHead id="views" label="연 횟수" sortKey={sortKey} ascending={ascending} onSort={sortBy} />
+              <th className="v3-num">머문 시간{dwell ? null : <> <PrepBadge /></>}</th>
+              <SortHead id="entries" label="여기서 시작한 방문" sortKey={sortKey} ascending={ascending} onSort={sortBy} />
+              <th>어디서 왔나</th>
+              <SortHead id="bounce" label="금방 나간 비율" sortKey={sortKey} ascending={ascending} onSort={sortBy} />
+              <th className="v3-num">앞 기간보다</th>
             </tr>
           </thead>
           <tbody>
@@ -243,7 +251,7 @@ function ContentTable({ rows, bundle, year }: { rows: ContentRow[]; bundle: Stat
                         <>
                           <Stack parts={row.sources} />
                           <div className="v3-source-label">
-                            검색 {row.sources[0]} · AI {row.sources[1]}
+                            검색 {row.sources[0]}% · AI {row.sources[1]}%
                           </div>
                         </>
                       ) : (
@@ -276,7 +284,7 @@ function Moves({ title, rows, empty }: { title: string; rows: MoveRow[]; empty: 
     <div className="v3-card">
       <div className="v3-card-head">
         <h2>{title}</h2>
-        <span className="v3-tiny">지난 기간 대비</span>
+        <span className="v3-tiny">연 횟수 · 앞 기간과 비교</span>
       </div>
       <List
         empty={empty}
@@ -301,7 +309,10 @@ export function V3Content({ bundle, status, from, to, today, catalog }: V3Screen
   const rows = useMemo(() => contentRows(bundle, catalog, from, to), [bundle, catalog, from, to]);
   const moves = useMemo(() => contentMoves(rows, bundle), [rows, bundle]);
   const answer = useMemo(() => contentAnswer(rows, bundle), [rows, bundle]);
-  const compareEmpty = rows.length === 0 ? "이 기간에는 값이 없습니다." : "앞 기간과 견줄 수 있는 콘텐츠가 없습니다.";
+  const compareEmpty =
+    rows.length === 0
+      ? "이 기간에는 값이 없어요."
+      : "앞 기간과 견줄 수 있는 페이지가 없어요. 앞 기간이 새 홈페이지를 열기 전이면 견주지 않아요.";
 
   return (
     <>
@@ -321,19 +332,19 @@ export function V3Content({ bundle, status, from, to, today, catalog }: V3Screen
       />
       <div className="v3-metrics">
         {cards.map((card) => (
-          <Metric key={card.id} label={card.label} value={card.value} unit={card.unit} delta={card.delta} />
+          <Metric key={card.id} label={card.label} hint={card.hint} value={card.value} unit={card.unit} delta={card.delta} />
         ))}
       </div>
       <div className="v3-card">
         <div className="v3-card-head">
-          <h2>많이 본 콘텐츠</h2>
-          <span className="v3-tiny">숫자 제목을 누르면 순서가 바뀝니다</span>
+          <h2>많이 본 페이지</h2>
+          <span className="v3-tiny">표 위 「연 횟수」 같은 제목을 누르면 순서가 바뀌어요</span>
         </div>
         {status === "ready" ? <ContentTable rows={rows} bundle={bundle} year={year} /> : <StatusLine status={status} />}
       </div>
       <div className="v3-two">
-        <Moves title="오른 콘텐츠" rows={moves.up} empty={compareEmpty} />
-        <Moves title="내린 콘텐츠" rows={moves.down} empty={compareEmpty} />
+        <Moves title="앞 기간보다 많이 본 페이지" rows={moves.up} empty={compareEmpty} />
+        <Moves title="앞 기간보다 덜 본 페이지" rows={moves.down} empty={compareEmpty} />
       </div>
     </>
   );

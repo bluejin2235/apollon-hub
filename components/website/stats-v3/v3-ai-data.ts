@@ -1,12 +1,12 @@
 /**
- * AI 화면 v3 — 「AI가 우리 글을 읽고, 쓰고, 사람을 보내 주나요?」
+ * AI 화면 v3 — 세 질문
+ *   ① AI가 우리 사이트를 읽어 갔나 (kind=bots, 로봇 기록은 2026-11-16 부터)
+ *   ② AI 답변에 우리가 나오나 (stats/ai-answers, 사람이 직접 물어본 기록)
+ *   ③ AI 답변을 보고 사람이 왔나 (kind=ai_visits, GA 출처가 AI 서비스인 방문)
  *
- * ① 읽어 감은 지금 AI 화면의 readBotsPayload · countDelta · buildAiTopContents,
- * ③ 사람이 옴은 readAiVisits · aiVisitsSummary · buildAiVisitPages 를 그대로 쓴다.
- * 여기서 정하는 것은 막대 이름과 순서뿐이다.
- *   · ① 구글 막대는 뺀다(팀장 결정) — 구글 로봇은 AI 와 검색을 구분할 수 없다
- *   · ③ 목업 네 칸(ChatGPT · Perplexity · Claude · Gemini) + 그 밖 서비스가 있으면 「그 밖」 한 칸
- * ② 답에 씀은 기록 표가 아직 없어 화면이 「준비 중」으로 둔다.
+ * ① 은 회사별로 나누고, 회사마다 무엇에 쓰는 로봇인지 쉬운 말을 붙인다. 검색 엔진 로봇(구글 · 빙 · 네이버)은
+ * AI 가 아니어서 따로 「참고」로 보인다. 홈페이지 분류 목록에 없는 이름은 「회사를 알 수 없는 로봇」으로 두고,
+ * 홈페이지가 이름별 숫자(ai.byName)를 주면 허브가 이름으로 회사를 찾아 옮기고 남은 이름을 그대로 적는다.
  */
 
 import {
@@ -35,36 +35,132 @@ export function botsDelta(pair: BotsCountPair | undefined, higherIsBetter = true
   return view.previous == null ? view : { ...view, previous: `${view.previous}회` };
 }
 
-/* ─────────────────────── ① 읽어 감 ─────────────────────── */
+/* ─────────────────────── ① 읽어 갔나 ─────────────────────── */
 
-/** 화면 이름 → 홈페이지 회사 이름. 「기타」는 나머지 전부(구글 제외) */
-const READ_BARS: { name: string; company: string | null }[] = [
-  { name: "ChatGPT", company: "OpenAI" },
-  { name: "Claude", company: "Anthropic" },
-  { name: "Perplexity", company: "Perplexity" },
-  { name: "기타", company: null }
+/** 홈페이지 회사 이름 → 화면 이름 · 무엇에 쓰는 로봇인지 */
+export const AI_COMPANY_INFO: Record<string, { name: string; purpose: string }> = {
+  OpenAI: { name: "OpenAI (ChatGPT)", purpose: "검색 · 답변 · AI 학습" },
+  Anthropic: { name: "Anthropic (Claude)", purpose: "답변 · AI 학습" },
+  Perplexity: { name: "Perplexity", purpose: "검색 · 답변" },
+  Meta: { name: "Meta (페이스북 · 인스타그램)", purpose: "AI 학습용" },
+  ByteDance: { name: "ByteDance (틱톡)", purpose: "AI 학습용" },
+  Apple: { name: "Apple", purpose: "AI 학습용" },
+  Google: { name: "Google", purpose: "AI 학습용" },
+  Microsoft: { name: "Microsoft", purpose: "AI" },
+  Naver: { name: "Naver", purpose: "AI" },
+  Amazon: { name: "Amazon", purpose: "AI 학습 · 알렉사" },
+  "Common Crawl": { name: "Common Crawl", purpose: "공개 자료 모음 (여러 AI가 학습에 씀)" }
+};
+
+const UNKNOWN_COMPANY = "기타";
+
+/** 로봇 이름으로 회사 찾기 — 홈페이지 분류 목록에 없는 이름도 허브가 아는 것은 옮긴다 */
+const BOT_NAME_COMPANY: [RegExp, string][] = [
+  [/meta-external|facebookbot|meta-webindexer/i, "Meta"],
+  [/gptbot|chatgpt|oai-searchbot/i, "OpenAI"],
+  [/claude|anthropic/i, "Anthropic"],
+  [/perplexity/i, "Perplexity"],
+  [/bytespider|tiktok/i, "ByteDance"],
+  [/applebot/i, "Apple"],
+  [/google-extended|googleother|google-cloudvertexbot/i, "Google"],
+  [/amazonbot/i, "Amazon"],
+  [/ccbot/i, "Common Crawl"]
 ];
 
-const NAMED_COMPANIES = new Set(["OpenAI", "Anthropic", "Perplexity", "Google"]);
-
-function sumPairs(pairs: BotsCountPair[]): BotsCountPair {
-  const current = pairs.reduce((acc, pair) => acc + (typeof pair.current === "number" ? pair.current : 0), 0);
-  const previous = pairs.length > 0 && pairs.every((pair) => typeof pair.previous === "number")
-    ? pairs.reduce((acc, pair) => acc + (pair.previous as number), 0)
-    : null;
-  return { current, previous };
+export function companyOfBotName(name: string): string | null {
+  for (const [re, company] of BOT_NAME_COMPANY) if (re.test(name)) return company;
+  return null;
 }
 
-/** 회사별 막대 — 값이 0 이어도 네 칸. 막대마다 증감 */
-export function readBars(payload: BotsStatsPayload | null): HBarRow[] {
-  const byCompany = payload?.ai.byCompany ?? {};
-  return READ_BARS.map(({ name, company }) => {
-    const pairs = Object.entries(byCompany)
-      .filter(([key]) => (company ? key === company : !NAMED_COMPANIES.has(key)))
-      .map(([, pair]) => pair);
-    const pair = sumPairs(pairs);
-    return { name, value: pair.current, change: payload ? botsDelta(pair) : null };
+export type CompanyRow = {
+  key: string;
+  name: string;
+  purpose: string;
+  value: number;
+  change: DeltaView | null;
+  /** 회사를 알 수 없는 줄 — 들어 있는 로봇 이름(알면) */
+  names?: string[];
+  unknown?: boolean;
+};
+
+function addPair(into: Map<string, BotsCountPair>, key: string, pair: BotsCountPair) {
+  const prev = into.get(key);
+  if (!prev) {
+    into.set(key, { current: pair.current, previous: pair.previous });
+    return;
+  }
+  into.set(key, {
+    current: prev.current + pair.current,
+    previous: prev.previous == null || pair.previous == null ? null : prev.previous + pair.previous
   });
+}
+
+/** 홈페이지가 이름별 숫자를 주면(ai.byName) 쓴다. 지금 응답에는 없다 */
+function byNameOf(payload: BotsStatsPayload): Record<string, BotsCountPair> | null {
+  const value = payload.ai.byName;
+  return value && typeof value === "object" ? value : null;
+}
+
+/** 회사별 줄 — 많은 순, 0 인 회사는 뺀다. 회사를 알 수 없는 로봇은 맨 끝 */
+export function companyRows(payload: BotsStatsPayload | null): CompanyRow[] {
+  if (!payload) return [];
+  const companies = new Map<string, BotsCountPair>();
+  const unknownNames: string[] = [];
+  const byName = byNameOf(payload);
+  if (byName) {
+    for (const [name, pair] of Object.entries(byName)) {
+      const company = companyOfBotName(name);
+      if (company) addPair(companies, company, pair);
+      else {
+        addPair(companies, UNKNOWN_COMPANY, pair);
+        if (pair.current > 0) unknownNames.push(name);
+      }
+    }
+  } else {
+    for (const [key, pair] of Object.entries(payload.ai.byCompany ?? {})) addPair(companies, key, pair);
+  }
+  const rows: CompanyRow[] = [];
+  for (const [key, pair] of companies) {
+    if (!(pair.current > 0)) continue;
+    const unknown = key === UNKNOWN_COMPANY;
+    const info = AI_COMPANY_INFO[key];
+    rows.push({
+      key,
+      name: unknown ? "회사를 알 수 없는 로봇" : (info?.name ?? key),
+      purpose: unknown
+        ? unknownNames.length > 0
+          ? `이름: ${unknownNames.join(", ")}`
+          : "홈페이지 분류 목록에 없는 로봇 (이름은 아직 받지 못함)"
+        : (info?.purpose ?? "AI"),
+      value: pair.current,
+      change: botsDelta(pair),
+      names: unknown ? unknownNames : undefined,
+      unknown: unknown || undefined
+    });
+  }
+  return rows.sort((a, b) => Number(a.unknown ?? false) - Number(b.unknown ?? false) || b.value - a.value);
+}
+
+/** 검색 엔진 로봇 이름 → 화면 이름 (AI 가 아니다) */
+const SEARCH_ENGINE_INFO: Record<string, { name: string; purpose: string }> = {
+  Googlebot: { name: "Google", purpose: "검색" },
+  Bingbot: { name: "Microsoft Bing", purpose: "검색" },
+  Yeti: { name: "Naver", purpose: "검색" },
+  Applebot: { name: "Apple", purpose: "검색 (Siri · Spotlight)" }
+};
+
+export function searchEngineRows(payload: BotsStatsPayload | null): CompanyRow[] {
+  if (!payload) return [];
+  return Object.entries(payload.searchEngines.byName ?? {})
+    .filter(([, pair]) => pair.current > 0)
+    .map(([name, pair]) => ({
+      key: name,
+      name: SEARCH_ENGINE_INFO[name]?.name ?? name,
+      purpose: SEARCH_ENGINE_INFO[name]?.purpose ?? "검색",
+      value: pair.current,
+      change: botsDelta(pair)
+    }))
+    .sort((a, b) => b.value - a.value);
 }
 
 /** 사이트 안쪽 주소(이미지 변환 · API) — 콘텐츠가 아니라 목록에서 뺀다. robots.txt · llms.txt · sitemap.xml 은 남긴다 */
@@ -73,40 +169,53 @@ export function isInternalPath(path: string): boolean {
 }
 
 /**
- * 많이 읽어 간 콘텐츠 — 목업처럼 다섯 줄. buildAiTopContents 의 숫자 그대로이고,
- * 이 화면은 llms.txt 고정 줄이 없어 llms.txt 도 같은 목록에 횟수 순으로 넣는다.
+ * 많이 읽어 간 콘텐츠 — 홈페이지는 많이 읽힌 주소 10개만 준다.
+ * 그중 이미지 변환 주소(/_next) 등을 빼면 줄이 적어질 수 있어, 뺀 개수를 함께 돌려준다.
  */
-export function readTop(payload: BotsStatsPayload | null, titles: TitleMap, limit = 5) {
+export function readTopInfo(payload: BotsStatsPayload | null, titles: TitleMap, limit = 5) {
   const { rows, llms } = buildAiTopContents(payload, titles);
   const all = llms.count != null && llms.count > 0 ? [...rows, { ...llms, fixed: undefined }] : rows;
-  return all
-    .filter((row) => !isInternalPath(row.path))
-    .sort((a, b) => (b.count ?? 0) - (a.count ?? 0))
-    .slice(0, limit);
+  const internal = (payload?.ai.topPaths ?? []).filter((row) => isInternalPath(row.path)).length;
+  return {
+    rows: all
+      .filter((row) => !isInternalPath(row.path))
+      .sort((a, b) => (b.count ?? 0) - (a.count ?? 0))
+      .slice(0, limit),
+    listed: payload?.ai.topPaths?.length ?? 0,
+    internal
+  };
 }
 
-/* ─────────────────────── ② 답에 씀 ─────────────────────── */
+export function readTop(payload: BotsStatsPayload | null, titles: TitleMap, limit = 5) {
+  return readTopInfo(payload, titles, limit).rows;
+}
 
-/**
- * 표의 AI 열 네 개. 운영이 실제로 기록하는 서비스(ChatGPT · 구글 AI 개요)를 앞에 두고 「구글 AI 개요」는 꼭 넣는다.
- * 홈페이지 API(21번)가 서비스 목록을 주면 기록이 있는 서비스를 앞에 두고 나머지를 채운다. 아직 API 가 없다.
- */
-export const ANSWER_COLUMNS_DEFAULT = ["ChatGPT", "구글 AI 개요", "Claude", "Perplexity"] as const;
+/* ─────────────────────── ② 답에 나오나 ─────────────────────── */
+
+/** 홈페이지 서비스 이름 → 화면 이름. 「구글 AI 개요」는 구글 검색 결과 위 AI 요약 칸이다(제미나이 앱 아님) */
+export const GOOGLE_SUMMARY = "구글 검색 AI 요약";
+export const ANSWER_LABEL: Record<string, string> = { "구글 AI 개요": GOOGLE_SUMMARY };
+
+export function answerLabel(label: string): string {
+  return ANSWER_LABEL[label] ?? label;
+}
+
+/** 늘 보이는 열 — 확인한 서비스를 앞에 두고, 확인 안 한 서비스도 「확인 안 함」으로 보인다 */
+export const ANSWER_COLUMNS_DEFAULT = ["ChatGPT", GOOGLE_SUMMARY, "Perplexity", "Claude", "네이버"] as const;
 
 export function answerColumns(recorded: string[] = []): string[] {
   const cols: string[] = [];
-  for (const name of [...recorded, ...ANSWER_COLUMNS_DEFAULT]) {
+  for (const name of [...recorded.map(answerLabel), ...ANSWER_COLUMNS_DEFAULT]) {
     if (!cols.includes(name)) cols.push(name);
   }
-  if (!cols.slice(0, 4).includes("구글 AI 개요")) cols.splice(3, 0, "구글 AI 개요");
-  return cols.slice(0, 4);
+  return cols.slice(0, 5);
 }
 
-/* ─────────────────────── ③ 사람이 옴 ─────────────────────── */
+/* ─────────────────────── ③ 사람이 왔나 ─────────────────────── */
 
 const VISIT_BARS = ["ChatGPT", "Perplexity", "Claude", "Gemini"] as const;
 
-/** 목업 네 칸. 그 밖 서비스(Copilot 등)에서 온 방문이 있으면 「그 밖」 한 칸을 더해 합이 맞게 한다 */
+/** 네 칸. 그 밖 서비스(Copilot 등)에서 온 방문이 있으면 「그 밖」 한 칸을 더해 합이 맞게 한다 */
 export function visitBars(visits: AiVisits | null): HBarRow[] {
   const sessionsOf = (list: { name: string; sessions: number }[] | undefined, pick: (name: string) => boolean) =>
     (list ?? []).filter((row) => pick(row.name)).reduce((acc, row) => acc + row.sessions, 0);
@@ -135,10 +244,13 @@ export function visitSummary(bundle: StatsBundle | null) {
 
 /* ─────────────────────── 맨 위 답 문장 ─────────────────────── */
 
-/** 「AI에서 <em>N회 방문</em>했고, 읽기와 인용은 따로 확인해야 해요.」 */
+/** 「AI 답변을 보고 <em>N회 방문</em>했어요. …」 */
 export function aiAnswer(bundle: StatsBundle | null): { lead: string; em: string; tail: string } | null {
   const visits = readAiVisits(bundle);
   if (!visits) return null;
-  const tail = "했고, 읽기와 인용은 따로 확인해야 해요.";
-  return { lead: "AI에서 ", em: `${visits.current.total.toLocaleString("ko-KR")}회 방문`, tail };
+  return {
+    lead: "AI 답변을 보고 ",
+    em: `${visits.current.total.toLocaleString("ko-KR")}회 방문`,
+    tail: "했어요. AI가 읽어 간 것과 답변에 나온 것은 아래에서 따로 봐요."
+  };
 }

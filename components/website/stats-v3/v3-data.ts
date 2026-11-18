@@ -20,6 +20,7 @@ import {
   weightedField,
   type DeltaView
 } from "@/components/website/stats/stats-data";
+import { addIsoDays, inclusiveDays } from "@/components/website/stats-v3/v3-period";
 import type { PeriodUsersCompare, StatsAction, StatsBundle, StatsPoint } from "@/lib/website/stats";
 
 export type When = "current" | "previous";
@@ -298,4 +299,15 @@ export function daySeries(
 /** 날짜별 행 그대로(평균값 등 더하면 안 되는 값) */
 export function dayRows(rows: StatsPoint[]): StatsPoint[] {
   return [...rows].filter((row) => row.date).sort(byDate);
+}
+
+/**
+ * 그래프 마우스 상자에 쓰는 앞 기간 날짜 — 이번 날짜에서 기간 길이만큼 뺀 날.
+ * 응답에 비교 기간이 없으면 모두 null.
+ */
+export function prevDatesOf(bundle: StatsBundle | null, dates: string[]): (string | null)[] {
+  const range = readActualRange(bundle);
+  if (!range) return dates.map(() => null);
+  const length = inclusiveDays(range.actualFrom, range.actualTo);
+  return dates.map((date) => addIsoDays(date, -length));
 }

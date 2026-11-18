@@ -42,6 +42,8 @@ export type BotsStatsPayload = {
     failed: BotsCountPair;
     /** llms.txt 읽은 횟수. 홈페이지가 따로 주기 전 응답에는 없다 */
     llmsTxt?: BotsCountPair;
+    /** AI 로봇 이름별 횟수. 홈페이지가 주기 전 응답에는 없다 */
+    byName?: Record<string, BotsCountPair>;
   };
   searchEngines: {
     total: BotsCountPair;
@@ -101,7 +103,8 @@ export function readBotsPayload(bundle: StatsBundle | null): BotsStatsPayload | 
       askedTotal: withoutPrevious(ai.askedTotal),
       topPaths: (ai.topPaths ?? []).map((row) => ({ ...row, count: withoutPrevious(row.count) })),
       failed: withoutPrevious(ai.failed),
-      llmsTxt: withoutPrevious(ai.llmsTxt)
+      llmsTxt: withoutPrevious(ai.llmsTxt),
+      byName: ai.byName ? mapPairs(ai.byName) : undefined
     },
     searchEngines: {
       ...searchEngines,

@@ -6,6 +6,9 @@
 import { SITE_LAUNCH_DATE, type ActualCompareRange } from "@/components/website/stats/stats-data";
 import type { PeriodPresetId, StatsSyncKindStatus } from "@/lib/website/stats";
 
+/** 처음 열 때 기간 — 하루는 들쭉날쭉해 흐름을 보기 어려워 7일로 연다 */
+export const V3_DEFAULT_PRESET: PeriodPresetId = "7d";
+
 export function seoulToday(now = new Date()): string {
   return new Intl.DateTimeFormat("en-CA", {
     timeZone: "Asia/Seoul",

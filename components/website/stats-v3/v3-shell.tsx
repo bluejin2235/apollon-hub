@@ -11,6 +11,7 @@ import { useStatsActionsLoader } from "@/components/website/stats/stats-actions"
 import { readActualRange } from "@/components/website/stats/stats-data";
 import type { LoadStatus } from "@/components/website/stats/stats-slot";
 import { V3Ai } from "@/components/website/stats-v3/v3-ai";
+import { aiDayBucket, aiDayRanges, type V3AiDays } from "@/components/website/stats-v3/v3-ai-days";
 import { useV3Catalog } from "@/components/website/stats-v3/v3-catalog";
 import { V3Content } from "@/components/website/stats-v3/v3-content";
 import { V3Live } from "@/components/website/stats-v3/v3-live";
@@ -20,19 +21,78 @@ import {
   previousStartsBeforeLaunch,
   rangeForPreset,
   seoulToday,
+  V3_DEFAULT_PRESET,
   syncMainLine
 } from "@/components/website/stats-v3/v3-period";
 import {
   V3_NEEDS_CATALOG,
   V3_SCREENS,
+  type V3Extras,
   type V3ScreenId,
   type V3ScreenProps
 } from "@/components/website/stats-v3/v3-screens";
 import { V3Search } from "@/components/website/stats-v3/v3-search";
 import { V3Visits } from "@/components/website/stats-v3/v3-visits";
 import "./v3.css";
-import { getStatsBundle } from "@/lib/website/api";
-import { PERIOD_PRESETS, type PeriodPresetId, type StatsBundle, type StatsSyncStatus } from "@/lib/website/stats";
+import { getAiAnswerSummary, getStatsBundle } from "@/lib/website/api";
+import {
+  PERIOD_PRESETS,
+  type AiAnswerSummary,
+  type PeriodPresetId,
+  type StatsBundle,
+  type StatsSyncStatus
+} from "@/lib/website/stats";
+
+/**
+ * AI 화면만 쓰는 따로 받는 자료 — 「답에 씀」 기록과 날짜별 로봇 · 방문.
+ * 받은 값이 어느 기간 것인지 같이 둔다. 기간을 바꾸면 새 응답 전까지 옛 기간 값을 보이지 않는다.
+ */
+function useV3Extras(enabled: boolean, from: string, to: string): V3Extras {
+  const key = `${from}|${to}`;
+  const [answers, setAnswers] = useState<{ key: string; summary: AiAnswerSummary | null; ok: boolean } | null>(null);
+  const [days, setDays] = useState<{ key: string; value: V3AiDays } | null>(null);
+
+  useEffect(() => {
+    if (!enabled || !from || !to || from > to) return;
+    const controller = new AbortController();
+    const signal = controller.signal;
+    const at = `${from}|${to}`;
+    void getAiAnswerSummary({ from, to, signal }).then((result) => {
+      if (signal.aborted) return;
+      // 표가 아직 없거나 읽기 실패면 「기록 없음」으로 둔다
+      setAnswers({ key: at, summary: result.ok ? result.data : null, ok: result.ok });
+    });
+    const ranges = aiDayRanges(from, to);
+    void Promise.all(
+      ranges.map((range) => getStatsBundle({ from: range.from, to: range.to, kinds: ["bots", "ai_visits"], signal }))
+    ).then((results) => {
+      if (signal.aborted) return;
+      if (results.some((result) => !result.ok)) {
+        setDays({ key: at, value: { state: "error", buckets: [] } });
+        return;
+      }
+      const bundles = results.map((result) => (result.ok ? result.data.bundle : null));
+      setDays({
+        key: at,
+        value: {
+          state: "ready",
+          buckets: ranges.map((range, i) => aiDayBucket(range, bundles[i])),
+          since: bundles.find((bundle) => bundle?.bots?.bots?.since)?.bots?.bots?.since ?? null
+        }
+      });
+    });
+    return () => controller.abort();
+  }, [enabled, from, to]);
+
+  const answersNow = answers && answers.key === key ? answers : null;
+  const daysNow = days && days.key === key ? days.value : null;
+  return {
+    answers: answersNow
+      ? { state: answersNow.ok ? "ready" : "none", summary: answersNow.summary }
+      : { state: "loading", summary: null },
+    aiDays: enabled ? (daysNow ?? { state: "loading", buckets: [] }) : { state: "off", buckets: [] }
+  };
+}
 
 export const V3_SCREEN_PARTS: Partial<Record<V3ScreenId, ComponentType<V3ScreenProps>>> = {
   summary: V3Overview,
@@ -150,8 +210,8 @@ export function V3Frame({ header, label, children }: { header: ReactNode; label?
 
 export function V3Shell({ screen }: { screen: V3ScreenId }) {
   const today = useMemo(() => seoulToday(), []);
-  const initial = rangeForPreset("yesterday", today);
-  const [preset, setPreset] = useState<PeriodPresetId>("yesterday");
+  const initial = rangeForPreset(V3_DEFAULT_PRESET, today);
+  const [preset, setPreset] = useState<PeriodPresetId>(V3_DEFAULT_PRESET);
   const [from, setFrom] = useState(initial.from);
   const [to, setTo] = useState(initial.to);
   const [bundle, setBundle] = useState<StatsBundle | null>(null);
@@ -160,6 +220,7 @@ export function V3Shell({ screen }: { screen: V3ScreenId }) {
   const config = V3_SCREENS.find((item) => item.id === screen);
   const kinds = config?.kinds;
   const catalog = useV3Catalog(V3_NEEDS_CATALOG.includes(screen));
+  const extras = useV3Extras(screen === "ai", from, to);
 
   useEffect(() => {
     if (!kinds || !from || !to || from > to) return;
@@ -216,7 +277,7 @@ export function V3Shell({ screen }: { screen: V3ScreenId }) {
       }
     >
       {Screen ? (
-        <Screen bundle={bundle} status={status} from={from} to={to} today={today} catalog={catalog} actions={actions} />
+        <Screen bundle={bundle} status={status} from={from} to={to} today={today} catalog={catalog} actions={actions} extras={extras} />
       ) : null}
     </V3Frame>
   );

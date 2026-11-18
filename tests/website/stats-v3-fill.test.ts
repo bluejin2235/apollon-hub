@@ -222,7 +222,7 @@ describe("AI ② 답에 씀", () => {
     assert.equal(view.questionsMentionedBefore, 2);
     assert.equal(view.rows[0].id, 1);
     assert.equal(view.rows[0].diff, 1);
-    assert.ok(view.columns.includes("ChatGPT"));
+    assert.ok(view.columns.some((col) => col.label === "ChatGPT"));
   });
 
   it("기록이 없으면 null", () => {

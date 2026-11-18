@@ -48,6 +48,8 @@ export type ContentCardId = "views" | "dwell" | "articleEntries" | "searchToArti
 export type ContentCard = {
   id: ContentCardId;
   label: string;
+  /** 이 숫자가 무엇인지 쉬운 말 한 줄 */
+  hint: string;
   value: string | null;
   unit: string;
   delta: DeltaView;
@@ -75,35 +77,40 @@ export function contentCards(bundle: StatsBundle | null): ContentCard[] {
   return [
     {
       id: "views",
-      label: "전체 조회",
+      label: "페이지를 연 횟수",
+      hint: "모든 페이지를 연 횟수를 더한 값이에요.",
       value: intKo(views.current),
       unit: "회",
       delta: ratioDelta(views, (v) => withUnit("회")(intKo(v)))
     },
     {
       id: "dwell",
-      label: "평균 머문 시간",
+      label: "한 번 와서 머문 시간",
+      hint: "한 번 방문해서 사이트에 머문 평균 시간이에요.",
       value: dwellParts?.value ?? null,
       unit: dwellParts?.unit ?? "초",
       delta: ratioDelta(dwell, durationText)
     },
     {
       id: "articleEntries",
-      label: "글로 바로 들어온 방문",
+      label: "워크·인사이트 글로 바로 들어온 방문",
+      hint: "첫 화면을 거치지 않고 글 페이지에서 바로 시작한 방문 수예요. 검색이나 공유 링크로 많이 생겨요.",
       value: intKo(entries.current),
       unit: "회",
       delta: countDeltaOf(entries, (v) => withUnit("회")(intKo(v)))
     },
     {
       id: "searchToArticle",
-      label: "검색에서 글로 바로 도착",
+      label: "검색으로 와서 글로 바로 들어온 비율",
+      hint: "구글 같은 검색으로 온 방문 중, 글 페이지에서 바로 시작한 비율이에요.",
       value: pctNumber(rate.current),
       unit: "%",
       delta: makeDelta(rate.current, rate.previous, "point", true, withUnit("%")(pctNumber(rate.previous)))
     },
     {
       id: "bounce",
-      label: "그냥 나간 비율",
+      label: "금방 나간 비율",
+      hint: "10초 안에, 다른 페이지도 안 보고 나간 방문의 비율이에요. 낮을수록 좋아요.",
       value: pctNumber(bounce.current),
       unit: "%",
       delta: makeDelta(bounce.current, bounce.previous, "point", false, withUnit("%")(pctNumber(bounce.previous)))
@@ -359,7 +366,7 @@ export function contentAnswer(
   const entries = articleEntriesOf(bundle, "current");
   const tail =
     entries == null
-      ? " 조회가 가장 많았어요."
-      : ` 조회가 가장 많았고, 글로 바로 들어온 방문은 ${entries.toLocaleString("ko-KR")}회예요.`;
+      ? " 페이지가 가장 많이 열렸어요."
+      : ` 페이지가 가장 많이 열렸어요. 워크·인사이트 글로 바로 들어온 방문은 ${entries.toLocaleString("ko-KR")}회예요.`;
   return { em: top.title, tail };
 }
