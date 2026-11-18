@@ -149,7 +149,10 @@ function useV3Extras(enabled: boolean, range: ExtrasRange | null, mainFailed = f
   return {
     answers: answersNow
       ? { state: answersNow.ok ? "ready" : "none", summary: answersNow.summary }
-      : { state: "loading", summary: null },
+      : mainFailed
+        ? // 본 응답이 실패하면 기간을 몰라 답에 씀 기록을 받지 않는다. 「불러오는 중」에 머물지 않고 실패로 보인다
+          { state: "error", summary: null }
+        : { state: "loading", summary: null },
     aiDays: enabled
       ? daysNow
         ? { ...daysNow, previous: prevNow }
@@ -365,7 +368,8 @@ export function V3Shell({ screen }: { screen: V3ScreenId }) {
           today={today}
           compareText={compareLine(preset, from, to, today, headRange)}
           showOldSite={headRange?.prevIncludesPreLaunch ?? previousStartsBeforeLaunch(from, to)}
-          syncStatus={syncStatus}
+          // GA 수집 안내도 지금 고른 기간의 응답이 왔을 때만. 그 전에는 옛 응답을 읽지 않는다
+          syncStatus={bundleFresh ? syncStatus : null}
           onPreset={applyPreset}
           onFrom={setFrom}
           onTo={setTo}

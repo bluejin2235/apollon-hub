@@ -97,38 +97,44 @@ type BriefState =
 /** 지금 요약 화면(summary-screen.tsx)의 useSummaryBrief 와 같다 — 같은 기간 · 같은 숫자는 같은 캐시를 쓴다 */
 function useSummaryBrief(data: StatsData, from: string, to: string): { state: BriefState; retry: () => void } {
   const [retryTick, setRetryTick] = useState(0);
-  const [state, setState] = useState<BriefState>({ status: "idle" });
+  /**
+   * 받은 요약은 어느 기간 것인지(key = 고른 기간)와 함께 둔다.
+   * 그리는 때 key 가 지금 고른 기간과 다르면 옛 요약을 쓰지 않고 「만드는 중」으로 그린다(effect 가 지우기를 기다리지 않음).
+   */
+  const [entry, setEntry] = useState<{ key: string; state: BriefState } | null>(null);
+  const key = `${from}|${to}`;
 
   useEffect(() => {
-    if (data.status === "loading") {
-      setState({ status: "loading" });
-      return;
-    }
-    if (data.status === "error") {
-      setState({ status: "error" });
-      return;
-    }
+    if (data.status !== "ready") return;
     const facts = buildSummaryBriefFacts(data.bundle, from, to);
     if (!facts) {
-      setState({ status: "idle" });
+      setEntry({ key, state: { status: "idle" } });
       return;
     }
     const fingerprint = summaryBriefFingerprint(facts);
     let cancelled = false;
-    setState({ status: "loading" });
+    setEntry({ key, state: { status: "loading" } });
     void loadSummaryBrief(facts.from, facts.to, fingerprint, facts).then((result) => {
       if (cancelled) return;
       if (!result.ok || !result.data?.summary) {
-        setState({ status: "error" });
+        setEntry({ key, state: { status: "error" } });
         return;
       }
-      setState({ status: "ready", data: result.data });
+      setEntry({ key, state: { status: "ready", data: result.data } });
     });
     return () => {
       cancelled = true;
     };
-  }, [data.bundle, data.status, from, to, retryTick]);
+  }, [data.bundle, data.status, from, to, key, retryTick]);
 
+  const state: BriefState =
+    data.status === "loading"
+      ? { status: "loading" }
+      : data.status === "error"
+        ? { status: "error" }
+        : entry && entry.key === key
+          ? entry.state
+          : { status: "loading" };
   return { state, retry: () => setRetryTick((n) => n + 1) };
 }
 
@@ -191,7 +197,15 @@ export function LunaAndTasks({ state, onRetry }: { state: BriefState; onRetry: (
   );
 }
 
-function Records({ bundle, actions, from, to, today }: Pick<V3ScreenProps, "bundle" | "actions" | "from" | "to" | "today">) {
+function Records({
+  bundle,
+  fresh,
+  status,
+  actions,
+  from,
+  to,
+  today
+}: Pick<V3ScreenProps, "bundle" | "fresh" | "status" | "actions" | "from" | "to" | "today">) {
   const dialog = useRef<HTMLDialogElement>(null);
   const [date, setDate] = useState(today);
   const [text, setText] = useState("");
@@ -238,7 +252,10 @@ function Records({ bundle, actions, from, to, today }: Pick<V3ScreenProps, "bund
           + 기록 추가
         </button>
       </div>
-      {items.length > 0 ? (
+      {!fresh ? (
+        // 지금 고른 기간의 응답이 오기 전에는 옛 기간 기록을 그리지 않는다
+        <StatusLine status={status === "error" ? "error" : "loading"} />
+      ) : items.length > 0 ? (
         <div className="v3-records">
           {items.map((item) => (
             <span key={item.id}>

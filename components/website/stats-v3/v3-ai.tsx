@@ -494,6 +494,14 @@ function AnswerCard({ extras, today }: Pick<V3ScreenProps, "extras" | "today">) 
       <p className="v3-card-sub">사람이 AI에게 직접 물어보고 답을 적은 기록이에요.</p>
     </>
   );
+  if (extras.answers.state === "error") {
+    return (
+      <div className="v3-card v3-ai-wide">
+        {head}
+        <StatusLine status="error" />
+      </div>
+    );
+  }
   if (extras.answers.state === "loading") {
     return (
       <div className="v3-card v3-ai-wide">

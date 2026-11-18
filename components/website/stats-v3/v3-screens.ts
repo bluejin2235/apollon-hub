@@ -9,7 +9,7 @@ import type { AiAnswerSummary, StatsBundle } from "@/lib/website/stats";
 /** 묶음(bundle) 밖에서 따로 받는 자료. 화면은 받아 오지 않고 그리기만 한다 */
 export type V3Extras = {
   /** AI 「답에 씀」 수동 확인 기록 */
-  answers: { state: "loading" | "ready" | "none"; summary: AiAnswerSummary | null };
+  answers: { state: "loading" | "ready" | "none" | "error"; summary: AiAnswerSummary | null };
   /** AI 날짜별 — 로봇 · AI 에서 온 방문 (하루씩 따로 받는다) */
   aiDays: V3AiDays;
 };
