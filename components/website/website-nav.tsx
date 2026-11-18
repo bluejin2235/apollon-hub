@@ -42,14 +42,22 @@ const CAREER_UNREAD = 0;
 /** Let's Talk 안 읽은 문의. 데이터 연결 전 자리만 둔다. */
 const CONTACT_UNREAD = 0;
 
-/** 옛 통계 화면(/website/stats/...)은 메뉴에서 빼고 주소로만 남긴다 */
-const STATS_NAV_ITEMS: WebsiteNavItem[] = V3_SCREENS.map((item) => ({
-  href: item.href,
-  label: item.label,
-  shortLabel: item.label,
-  match: (p) => p === item.href,
-  icon: BarChart3
-}));
+const STATS_NAV_ITEMS: WebsiteNavItem[] = [
+  ...V3_SCREENS.map((item) => ({
+    href: item.href,
+    label: item.label,
+    shortLabel: item.label,
+    match: (p: string) => p === item.href,
+    icon: BarChart3
+  })),
+  {
+    href: "/website/stats/actions",
+    label: "조치 기록",
+    shortLabel: "조치",
+    match: (p: string) => p === "/website/stats/actions",
+    icon: BarChart3
+  }
+];
 
 export const WEBSITE_NAV_GROUPS: WebsiteNavGroup[] = [
   {
@@ -123,7 +131,7 @@ export const WEBSITE_NAV_GROUPS: WebsiteNavGroup[] = [
   {
     kind: "tree",
     title: "홈페이지 통계",
-    titleHref: "/website/stats-v3/overview",
+    titleHref: "/website/stats/summary",
     match: (p) => p.startsWith("/website/stats"),
     items: STATS_NAV_ITEMS
   },

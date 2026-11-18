@@ -1,8 +1,8 @@
 "use client";
 
 /**
- * 홈페이지 통계 v3 — 목업 hub-stats-v3 의 공통 머리(기간 · 마지막 수집 · 비교 줄 · 지금 방문객)와 아래 줄.
- * 지금 화면(/website/stats)은 건드리지 않고 /website/stats-v3 에 새로 둔다.
+ * 홈페이지 통계 — 목업 hub-stats-v3 의 공통 머리(기간 · 마지막 수집 · 비교 줄 · 지금 방문객)와 아래 줄.
+ * 주소는 /website/stats/... (요약·콘텐츠·검색·AI·방문 패턴).
  */
 
 import { useEffect, useMemo, useState, type ComponentType, type ReactNode } from "react";
@@ -35,11 +35,11 @@ import { getStatsBundle } from "@/lib/website/api";
 import { PERIOD_PRESETS, type PeriodPresetId, type StatsBundle, type StatsSyncStatus } from "@/lib/website/stats";
 
 export const V3_SCREEN_PARTS: Partial<Record<V3ScreenId, ComponentType<V3ScreenProps>>> = {
-  overview: V3Overview,
+  summary: V3Overview,
   content: V3Content,
   search: V3Search,
   ai: V3Ai,
-  visits: V3Visits
+  behavior: V3Visits
 };
 
 function SyncLine({ status }: { status: StatsSyncStatus | null }) {

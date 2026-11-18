@@ -18,6 +18,27 @@ const nextConfig: NextConfig = {
         source: "/website/stats/ai-crawler",
         destination: "/website/stats/ai",
         permanent: false
+      },
+      // 옛 stats-v3 미리보기 주소 → 본 주소 (308)
+      {
+        source: "/website/stats-v3",
+        destination: "/website/stats/summary",
+        permanent: true
+      },
+      {
+        source: "/website/stats-v3/overview",
+        destination: "/website/stats/summary",
+        permanent: true
+      },
+      {
+        source: "/website/stats-v3/visits",
+        destination: "/website/stats/behavior",
+        permanent: true
+      },
+      {
+        source: "/website/stats-v3/:screen",
+        destination: "/website/stats/:screen",
+        permanent: true
       }
     ];
   },
