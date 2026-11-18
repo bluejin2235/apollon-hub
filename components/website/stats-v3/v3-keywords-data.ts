@@ -8,7 +8,14 @@
 
 import { pageTitleFromPath, type TitleMap } from "@/components/website/stats/content-data";
 import { makeCountDelta, pickRows, previousIsOldSite, type DeltaView } from "@/components/website/stats/stats-data";
-import { normalizePath, prevDateOf, SEARCH_SOURCES, type When } from "@/components/website/stats-v3/v3-data";
+import {
+  normalizePath,
+  prevDateOf,
+  queryCoverage,
+  SEARCH_SOURCES,
+  trimQueriesToCoverage,
+  type When
+} from "@/components/website/stats-v3/v3-data";
 import type { StatsBundle, StatsPoint, TargetKeywordsPayload } from "@/lib/website/stats";
 
 /** 비교용: NFKC · 소문자 · 공백·문장부호·기호 뺌 (홈페이지와 같은 규칙) */
@@ -22,7 +29,9 @@ export function normalizeKeyword(value: string): string {
 export type KeywordChange =
   | { type: "delta"; delta: DeltaView }
   | { type: "new" }
-  | { type: "none" };
+  | { type: "none" }
+  /** 두 기간 모두 검색어 자료가 있는 날 짝이 없다. 화면은 「—」 */
+  | { type: "nopair" };
 
 export type TargetKeywordView = {
   id: number;
@@ -45,6 +54,10 @@ export type TargetKeywordsView = {
   rows: TargetKeywordView[];
   /** query_page 행이 하나라도 있나 — 없으면 「들어온 페이지」 열에 「준비 중」 */
   hasLanding: boolean;
+  /** 증감에 실제로 견준 날 수(두 기간 모두 검색어 자료가 있는 날 짝). 짝이 없거나 옛 사이트면 null */
+  comparedDays: number | null;
+  /** 표 위 작은 글: 증감을 몇 날끼리 견줬는지. 앞 기간이 옛 사이트면 null(칸마다 「비교 불가」) */
+  compareNote: string | null;
 };
 
 function gscRows(bundle: StatsBundle | null, kind: string, when: When): StatsPoint[] {
@@ -92,7 +105,7 @@ function datesOf(rows: StatsPoint[]): string[] {
 
 export function targetKeywordsView(bundle: StatsBundle | null, titles: TitleMap): TargetKeywordsView {
   const payload = bundle?.target_keywords?.target_keywords ?? null;
-  if (!payload) return { payload: null, rows: [], hasLanding: false };
+  if (!payload) return { payload: null, rows: [], hasLanding: false, comparedDays: null, compareNote: null };
 
   const oldSite = previousIsOldSite(bundle);
   const queryCur = gscRows(bundle, "query", "current");
@@ -102,6 +115,16 @@ export function targetKeywordsView(bundle: StatsBundle | null, titles: TitleMap)
   const curDates = datesOf(queryCur);
   const prevDates = new Set(datesOf(queryPrev));
   const prevDate = prevDateOf(bundle);
+  // 증감은 두 기간 모두 검색어 자료가 있는 날 짝만 더해 견준다(검색 화면 위 숫자와 같은 규칙)
+  const cover = oldSite ? null : queryCoverage(bundle);
+  const paired = cover && cover.prevDates.length > 0 ? trimQueriesToCoverage(bundle) : null;
+  const pairedCur = paired ? gscRows(paired, "query", "current") : [];
+  const pairedPrev = paired ? gscRows(paired, "query", "previous") : [];
+  const sumOf = (rows: StatsPoint[], norm: string) => {
+    let total = 0;
+    for (const value of dailyImpressions(rows, norm).values()) total += value;
+    return total;
+  };
 
   const rows = payload.rows.map((row): TargetKeywordView => {
     const norm = normalizeKeyword(row.keyword);
@@ -109,18 +132,18 @@ export function targetKeywordsView(bundle: StatsBundle | null, titles: TitleMap)
     const prev = dailyImpressions(queryPrev, norm);
     let change: KeywordChange;
     if (oldSite) change = { type: "none" };
-    else if (row.newly_seen) change = { type: "new" };
-    else if (row.current.impressions === 0 && row.previous.impressions === 0) change = { type: "none" };
-    else
-      change = {
-        type: "delta",
-        delta: makeCountDelta(
-          row.current.impressions,
-          row.previous.impressions,
-          true,
-          `${row.previous.impressions.toLocaleString("ko-KR")}회`
-        )
-      };
+    else if (!paired) change = { type: "nopair" };
+    else {
+      const now = sumOf(pairedCur, norm);
+      const before = sumOf(pairedPrev, norm);
+      if (row.newly_seen && before === 0 && now > 0) change = { type: "new" };
+      else if (now === 0 && before === 0) change = { type: "none" };
+      else
+        change = {
+          type: "delta",
+          delta: makeCountDelta(now, before, true, `${before.toLocaleString("ko-KR")}회`)
+        };
+    }
     const landingPath = topLanding(pageCur, norm);
     return {
       id: row.id,
@@ -142,5 +165,16 @@ export function targetKeywordsView(bundle: StatsBundle | null, titles: TitleMap)
     };
   });
 
-  return { payload, rows, hasLanding: pageCur.length > 0 };
+  const comparedDays = paired && cover ? cover.days : null;
+  return {
+    payload,
+    rows,
+    hasLanding: pageCur.length > 0,
+    comparedDays,
+    compareNote: oldSite
+      ? null
+      : comparedDays != null
+        ? `앞 기간보다는 두 기간 모두 검색어 자료가 있는 ${comparedDays}일끼리 견줌`
+        : "두 기간 모두 검색어 자료가 있는 날이 없어 앞 기간보다는 「—」"
+  };
 }

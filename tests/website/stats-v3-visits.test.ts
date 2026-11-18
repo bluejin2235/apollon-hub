@@ -123,6 +123,15 @@ describe("v3 방문 패턴 카드", () => {
     assert.equal(new Map(visitCards(bundleOf()).map((card) => [card.id, card])).get("visitors")?.hint, null);
   });
 
+  it("날짜별 행이 하나도 없어도 응답이 왔고 period_users.current 가 없으면 「—」와 알림", () => {
+    const empty = { landing: { ...bundleOf().landing, period_users: undefined, current: [], previous: [] } } as unknown as StatsBundle;
+    const visitors = visitCards(empty).find((card) => card.id === "visitors");
+    assert.equal(visitors?.value, null);
+    assert.equal(visitors?.hint, PERIOD_USERS_MISSING_NOTE);
+    // 응답 자체가 없으면(불러오는 중 · 실패) 알림을 붙이지 않는다
+    assert.equal(visitCards(null).find((card) => card.id === "visitors")?.hint, null);
+  });
+
   it("추이는 지금 행동 화면 buildDepthTrend · buildDwellTrend 와 같은 값", () => {
     const depth = depthTrend(bundleOf());
     assert.deepEqual(depth.current, buildDepthTrend(bundleOf()).map((row) => row.pages));

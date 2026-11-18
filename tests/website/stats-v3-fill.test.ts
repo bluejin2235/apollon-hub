@@ -261,12 +261,35 @@ describe("코덱스 지적 반영", () => {
       query_page: result("query_page", [qp("/works/a?x=1", 1), qp("/works/a/", 1), qp("/works/b", 1)])
     };
     const view = targetKeywordsView(bundle, EMPTY_TITLES);
-    assert.equal(view.rows[0].change.type, "new");
+    // 검색어 행(query)이 없어 두 기간 짝도 없다. 증감은 「—」(nopair)
+    assert.equal(view.rows[0].change.type, "nopair");
+    assert.equal(view.comparedDays, null);
     assert.ok(view.rows[0].landing);
     assert.notEqual(view.rows[0].landing, targetKeywordsView({
       ...bundle,
       query_page: result("query_page", [qp("/works/b", 5)])
     }, EMPTY_TITLES).rows[0].landing);
+
+    // 짝이 있는 날(11월 17일 ↔ 11월 15일)만 더해 견준다. 11월 18일은 앞 기간 11월 16일 자료가 없어 뺀다
+    const q = (date: string, impressions: number) => row("gsc", "query", date, { key: "미디어아트", clicks: 0, impressions });
+    const other = (date: string) => row("gsc", "query", date, { key: "다른 말", clicks: 0, impressions: 1 });
+    const paired = {
+      ...bundle,
+      query: result("query", [q("2026-11-17", 4), q("2026-11-18", 50)], [q("2026-11-15", 2)])
+    } as StatsBundle;
+    const pairedView = targetKeywordsView(paired, EMPTY_TITLES);
+    assert.equal(pairedView.comparedDays, 1);
+    const change = pairedView.rows[0].change;
+    assert.equal(change.type, "delta");
+    assert.equal(change.type === "delta" ? change.delta.previous : null, "2회");
+    assert.match(pairedView.compareNote ?? "", /1일끼리/);
+
+    // 앞 기간 짝 날에 다른 검색어만 있고 이 키워드는 0 이면 「새로 잡힘」
+    const fresh = {
+      ...bundle,
+      query: result("query", [q("2026-11-17", 4)], [other("2026-11-15")])
+    } as StatsBundle;
+    assert.equal(targetKeywordsView(fresh, EMPTY_TITLES).rows[0].change.type, "new");
   });
 
   it("행 증감은 두 회차 모두 확인한 AI 끼리", () => {

@@ -4,11 +4,20 @@ import { describe, it } from "node:test";
 import "./stats-env";
 
 import { EMPTY_TITLES } from "../../components/website/stats/content-data";
-import { aiDayBucket, aiDayRanges, bucketRangeText, prevDayRanges } from "../../components/website/stats-v3/v3-ai-days";
+import {
+  aiDayBucket,
+  aiDayRanges,
+  botPrevReason,
+  bucketRangeText,
+  prevDayRanges,
+  prevSlotPlan,
+  prevSlotsFrom,
+  visitPrevReason
+} from "../../components/website/stats-v3/v3-ai-days";
 import { answerView } from "../../components/website/stats-v3/v3-answer-data";
 import { axisLabel, tickIndexes, valueSegments, xPercent } from "../../components/website/stats-v3/v3-chart";
 import { pageDaySeries } from "../../components/website/stats-v3/v3-content-data";
-import { prevDatesOf } from "../../components/website/stats-v3/v3-data";
+import { prevDatesOf, PREV_REASON, prevReasonsOf } from "../../components/website/stats-v3/v3-data";
 import { overviewTrend } from "../../components/website/stats-v3/v3-overview-data";
 import { rangeForPreset, V3_DEFAULT_PRESET } from "../../components/website/stats-v3/v3-period";
 import {
@@ -147,6 +156,28 @@ describe("검색 날짜별 · 숨긴 검색어 · 늦게 들어온 날", () => {
     assert.deepEqual(series.dates, ["2026-11-11", "2026-11-12", "2026-11-15"]);
     assert.deepEqual(series.prevDates, ["2026-11-04", "2026-11-05", "2026-11-08"]);
     assert.deepEqual(series.previous, [1, 0, null]);
+    // 구글 일별 합계 그래프도 점마다 까닭을 받는다
+    assert.deepEqual(series.prevReasons, [null, null, PREV_REASON.noData]);
+    // 검색어 갈래 그래프는 「검색어 자료 없음」
+    assert.deepEqual(brandSplitDays(bundle, "clicks").prevReasons, [null, "검색어 자료 없음", "검색어 자료 없음"]);
+  });
+
+  it("앞 기간 까닭은 실제 까닭으로: 비교 기간 밖 · 새 홈페이지 열기 전 · 섞인 옛 사이트 · 자료 없음", () => {
+    // 비교 기간 11월 4~10일, 연 날 11월 1일
+    const has = (i: number) => i === 0;
+    assert.deepEqual(prevReasonsOf(bundle, ["2026-11-04", null, "2026-11-11", "2026-11-06"], has), [
+      null,
+      PREV_REASON.outside,
+      PREV_REASON.outside,
+      PREV_REASON.noData
+    ]);
+    const early = {
+      daily: result("daily", [], [], { launch_date: "2026-11-06", prev_includes_pre_launch: true })
+    } as unknown as StatsBundle;
+    assert.deepEqual(prevReasonsOf(early, ["2026-11-05", "2026-11-07"], () => false), [
+      PREV_REASON.preLaunch,
+      PREV_REASON.mixedOldSite
+    ]);
   });
 
   it("회사 이름 · 일반 명사 · 구글이 숨긴 몫은 합계에서 뺀 나머지, 검색어 행이 없는 날은 0 이 아니라 null", () => {
@@ -487,5 +518,38 @@ describe("AI 날짜별 흐름: 같은 자리 앞 기간 칸", () => {
       { from: "2026-09-28", to: "2026-09-30" }
     ]);
     assert.deepEqual(prevDayRanges(ranges, "2026-11-11", "", ""), [null, null, null]);
+  });
+
+  it("앞 기간 칸은 따로 받고, 거절 · 실패한 칸만 「받지 못함」. 다른 칸 값은 그대로 붙는다", () => {
+    const ranges = aiDayRanges("2026-11-11", "2026-11-14");
+    // 앞 기간 11월 6~9일, 연 날 11월 7일 → 11월 6일 칸은 열기 전, 나머지 셋만 받는다
+    const plan = prevSlotPlan(ranges, "2026-11-11", "2026-11-06", "2026-11-09", "2026-11-07");
+    assert.deepEqual(
+      plan.map((slot) => slot.reason),
+      [PREV_REASON.preLaunch, null, null, null]
+    );
+    const bots = (since: string) =>
+      ({
+        bots: { bots: { since, ai: { total: { current: 3 }, byCompany: { OpenAI: { current: 3 } } } } },
+        ai_visits: { ai_visits: { current: { total: 2, by_name: [], top_pages: [] } } }
+      }) as unknown as StatsBundle;
+    const slots = prevSlotsFrom(plan, [
+      { status: "fulfilled", value: { ok: true, bundle: bots("2026-11-09") } },
+      { status: "rejected", reason: new Error("network") },
+      { status: "fulfilled", value: { ok: true, bundle: bots("2026-11-09") } }
+    ]);
+    assert.deepEqual(
+      slots.map((slot) => slot.reason),
+      [PREV_REASON.preLaunch, null, PREV_REASON.failed, null]
+    );
+    assert.equal(slots[1].bucket?.visits, 2);
+    assert.equal(slots[3].bucket?.botsTotal, 3);
+    // 로봇: 11월 7일 칸은 받았지만 로봇 기록(11월 9일) 전 → 「로봇 기록 시작 전」. 비교 기간 밖 칸은 그 까닭 그대로
+    assert.equal(botPrevReason(slots[1]), PREV_REASON.botsBefore);
+    assert.equal(botPrevReason(slots[3]), null);
+    assert.equal(botPrevReason({ range: null, bucket: null, reason: PREV_REASON.outside }), PREV_REASON.outside);
+    assert.equal(botPrevReason(null), PREV_REASON.loading);
+    assert.equal(visitPrevReason(slots[1]), null);
+    assert.equal(visitPrevReason(slots[2]), PREV_REASON.failed);
   });
 });

@@ -6,6 +6,7 @@
  * 홈페이지가 날짜별 칸을 주면 이 파일의 받는 부분만 바꾸면 된다.
  */
 
+import { PREV_REASON } from "@/components/website/stats-v3/v3-data";
 import { addIsoDays, inclusiveDays } from "@/components/website/stats-v3/v3-period";
 import type { StatsBundle } from "@/lib/website/stats";
 
@@ -51,11 +52,72 @@ export type V3AiDays = {
   buckets: AiDayBucket[];
   /** 로봇 기록 시작일 */
   since?: string | null;
-  /** buckets 와 같은 자리의 앞 기간 칸(마우스 상자 비교용). 받지 않았거나 받기 실패면 null, 앞 기간 밖 칸은 null */
-  previous?: (AiDayBucket | null)[] | null;
-  /** previous 가 null 일 때 상자에 쓰는 까닭 */
-  previousReason?: string | null;
+  /**
+   * buckets 와 같은 자리의 앞 기간 칸(마우스 상자 비교용). 이번 기간 그래프와 따로 받는다.
+   * 아직 받는 중이면 null. 칸마다 값(bucket) 또는 비어 있는 까닭(reason)을 둔다.
+   */
+  previous?: AiPrevSlot[] | null;
 };
+
+/** 앞 기간 한 칸: 받은 값, 또는 받지 않았거나 못 받은 까닭 */
+export type AiPrevSlot = {
+  /** 받을 앞 기간 날짜. 비교 기간 밖이면 null */
+  range: AiDayRange | null;
+  bucket: AiDayBucket | null;
+  /** bucket 이 없는 까닭(비교 기간 밖 · 새 홈페이지 열기 전 · 앞 기간 자료를 받지 못함). bucket 이 있으면 null */
+  reason: string | null;
+};
+
+/**
+ * 받기 전 계획: 칸마다 받을 앞 기간 날짜를 정하고, 받을 수 없는 칸은 까닭을 미리 적는다.
+ * 비교 기간 밖이면 「비교 기간 밖」, 칸이 새 홈페이지를 연 날(launch) 전에 걸치면 「새 홈페이지 열기 전」.
+ */
+export function prevSlotPlan(
+  ranges: AiDayRange[],
+  from: string,
+  prevFrom: string,
+  prevTo: string,
+  launch: string | null
+): AiPrevSlot[] {
+  return prevDayRanges(ranges, from, prevFrom, prevTo).map((range) => {
+    if (!range) return { range: null, bucket: null, reason: PREV_REASON.outside };
+    if (launch && range.from < launch) return { range, bucket: null, reason: PREV_REASON.preLaunch };
+    return { range, bucket: null, reason: null };
+  });
+}
+
+/**
+ * 받은 결과를 칸에 붙인다. 받을 칸(reason=null)만 차례로 결과를 쓴다(결과 수 = 받을 칸 수).
+ * 실패(ok=false)나 거절(rejected)된 칸만 「앞 기간 자료를 받지 못함」: 나머지 칸은 그대로 비교 값이 붙는다.
+ */
+export function prevSlotsFrom(
+  plan: AiPrevSlot[],
+  settled: PromiseSettledResult<{ ok: true; bundle: StatsBundle | null } | { ok: false }>[]
+): AiPrevSlot[] {
+  let k = 0;
+  return plan.map((slot) => {
+    if (slot.reason || !slot.range) return slot;
+    const result = settled[k++];
+    if (!result || result.status === "rejected" || !result.value.ok) {
+      return { ...slot, reason: PREV_REASON.failed };
+    }
+    return { ...slot, bucket: aiDayBucket(slot.range, result.value.bundle), reason: null };
+  });
+}
+
+/** 로봇 그래프 점의 앞 기간 까닭: 받은 칸이 로봇 기록 시작 전이면 「로봇 기록 시작 전」 */
+export function botPrevReason(slot: AiPrevSlot | null | undefined): string | null {
+  if (!slot) return PREV_REASON.loading;
+  if (slot.reason) return slot.reason;
+  return slot.bucket?.botsByCompany ? null : PREV_REASON.botsBefore;
+}
+
+/** 방문 그래프 점의 앞 기간 까닭 */
+export function visitPrevReason(slot: AiPrevSlot | null | undefined): string | null {
+  if (!slot) return PREV_REASON.loading;
+  if (slot.reason) return slot.reason;
+  return typeof slot.bucket?.visits === "number" ? null : PREV_REASON.noData;
+}
 
 /**
  * 이번 기간 칸과 같은 자리의 앞 기간 칸. 앞 기간 시작(prevFrom)이 이번 시작(from)보다 며칠 앞인지만큼 당긴다

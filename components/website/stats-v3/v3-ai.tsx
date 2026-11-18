@@ -10,7 +10,13 @@
 
 import { Fragment, useMemo, useState } from "react";
 
-import { bucketRangeText, type AiDayBucket } from "@/components/website/stats-v3/v3-ai-days";
+import {
+  botPrevReason,
+  bucketRangeText,
+  visitPrevReason,
+  type AiDayBucket,
+  type AiPrevSlot
+} from "@/components/website/stats-v3/v3-ai-days";
 import {
   aiAnswer,
   botsDelta,
@@ -120,11 +126,12 @@ function AiTrends({ bundle, extras, today }: Pick<V3ScreenProps, "bundle" | "ext
     .map(([key]) => key);
   const shown = topCompanies.slice(0, 4);
   const restKeys = topCompanies.slice(4);
-  // 같은 자리 앞 기간 칸: 마우스 상자에서 견줄 값. 로봇 기록 시작 전 칸은 null
-  const prevOf = (bucket: AiDayBucket): AiDayBucket | null => {
+  // 같은 자리 앞 기간 칸: 마우스 상자에서 견줄 값. 아직 받는 중이면 slot 이 없다(「앞 기간 불러오는 중」)
+  const slotOf = (bucket: AiDayBucket): AiPrevSlot | null => {
     const at = days.buckets.indexOf(bucket);
     return at >= 0 ? (days.previous?.[at] ?? null) : null;
   };
+  const prevOf = (bucket: AiDayBucket): AiDayBucket | null => slotOf(bucket)?.bucket ?? null;
   const prevCompany = (bucket: AiDayBucket, keys: string[]): number | null => {
     const before = prevOf(bucket)?.botsByCompany;
     return before ? keys.reduce((acc, key) => acc + (before[key] ?? 0), 0) : null;
@@ -145,13 +152,13 @@ function AiTrends({ bundle, extras, today }: Pick<V3ScreenProps, "bundle" | "ext
         ]
       : [])
   ];
-  const botPrevReason =
-    days.previousReason ?? (since ? `로봇 기록은 ${dayText(since, year)}부터` : "앞 기간 로봇 기록 없음");
+  // 점마다 실제 까닭: 비교 기간 밖 · 새 홈페이지 열기 전 · 로봇 기록 시작 전 · 받지 못함 · 불러오는 중
+  const botPrevReasons = botBuckets.map((b) => botPrevReason(slotOf(b)));
   const prevHead = (bucket: AiDayBucket, bots: boolean): string | null => {
     const before = prevOf(bucket);
     return before ? bucketHead(before, bots) : null;
   };
-  const visitPrevReason = days.previousReason ?? "앞 기간 기록 없음";
+  const visitPrevReasons = days.buckets.map((b) => visitPrevReason(slotOf(b)));
   const botPrev = payload?.ai.total.previous ?? null;
   const botFact =
     payload && botPrev != null
@@ -222,7 +229,7 @@ function AiTrends({ bundle, extras, today }: Pick<V3ScreenProps, "bundle" | "ext
               labels={botBuckets.map(bucketLabel)}
               tipHeads={botBuckets.map((b) => bucketHead(b, true))}
               prevTipHeads={botBuckets.map((b) => prevHead(b, true))}
-              prevReason={botPrevReason}
+              prevReason={botPrevReasons}
               series={botSeries}
               unit="회"
               ariaLabel="AI 로봇이 읽어 간 횟수 회사별 날짜별"
@@ -252,7 +259,7 @@ function AiTrends({ bundle, extras, today }: Pick<V3ScreenProps, "bundle" | "ext
               dates={days.buckets.map((b) => b.from)}
               tipHeads={days.buckets.map((b) => bucketHead(b, false))}
               prevTipHeads={days.buckets.map((b) => prevHead(b, false))}
-              prevReason={visitPrevReason}
+              prevReason={visitPrevReasons}
               current={days.buckets.map((b) => b.visits)}
               previous={days.buckets.map((b) => prevOf(b)?.visits ?? null)}
               unit="회"

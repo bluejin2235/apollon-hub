@@ -49,7 +49,7 @@ function readPeriodUsers(bundle: StatsBundle | null): PeriodUsersCompare | null 
 /**
  * 방문자: 기간 전체를 한 번 센 값(period_users)만 쓴다.
  * 그 값이 없을 때 날짜별 방문자를 더하면 여러 날 온 사람을 여러 번 세므로 대신 쓰지 않는다.
- * 이때 값은 null(화면은 「—」)이고, 날짜별 자료는 있는데 기간 값만 빠졌으면 periodMissing=true 다.
+ * 이때 값은 null(화면은 「—」)이다. 응답은 왔는데 period_users.current 가 없으면 날짜별 행이 있든 없든 periodMissing=true 다.
  */
 export function visitsOf(bundle: StatsBundle | null): {
   current: number | null;
@@ -70,7 +70,8 @@ export function visitsOf(bundle: StatsBundle | null): {
     current: null,
     previous: null,
     periodUsers: false,
-    periodMissing: ga4(bundle, "daily", "current").some((row) => typeof row.users === "number")
+    // 응답(bundle)이 왔다는 것은 준비된 상태. 그때 기간 값이 없으면 늘 알린다
+    periodMissing: bundle != null
   };
 }
 
@@ -347,4 +348,128 @@ export function previousByDate(
     const before = of(date);
     return previous && before ? (previous.get(before) ?? null) : null;
   });
+}
+
+/* ─────────────────────── 앞 기간 값이 빈 까닭 (마우스 상자) ─────────────────────── */
+
+/** 같은 자리 앞 기간 값이 없을 때 상자에 쓰는 실제 까닭 */
+export const PREV_REASON = {
+  /** 같은 자리 날이 앞 기간 밖이다 */
+  outside: "비교 기간 밖",
+  /** 그 날이 새 홈페이지를 열기 전이다 */
+  preLaunch: "새 홈페이지 열기 전",
+  /** 그 날은 열린 뒤지만, 앞 기간에 연 날 전이 섞여 앞 기간 전체를 견주지 않는다 */
+  mixedOldSite: "앞 기간에 새 홈페이지 열기 전 날이 섞여 견주지 않음",
+  /** 로봇 기록 시작일(since) 전이다 */
+  botsBefore: "로봇 기록 시작 전",
+  /** 앞 기간 자료를 받다가 실패했다 */
+  failed: "앞 기간 자료를 받지 못함",
+  /** 받았는데 그 날 값이 없다 */
+  noData: "자료 없음",
+  /** 아직 받는 중 */
+  loading: "앞 기간 불러오는 중"
+} as const;
+
+/**
+ * 점마다 앞 기간 값이 빈 까닭. 값이 있으면 null.
+ * 순서: 비교 기간 밖 → 열기 전 → (앞 기간에 열기 전 날이 섞임) → 자료 없음(noData, 검색어 그래프는 「검색어 자료 없음」).
+ */
+export function prevReasonsOf(
+  bundle: StatsBundle | null,
+  prevDates: (string | null)[],
+  has: (index: number) => boolean,
+  noData: string = PREV_REASON.noData
+): (string | null)[] {
+  const range = readActualRange(bundle);
+  const launch = readLaunchDate(bundle) ?? SITE_LAUNCH_DATE;
+  const oldSite = previousIsOldSite(bundle);
+  return prevDates.map((date, i) => {
+    if (has(i)) return null;
+    if (!date || (range && (date < range.prevFrom || date > range.prevTo))) return PREV_REASON.outside;
+    if (launch && date < launch) return PREV_REASON.preLaunch;
+    if (oldSite) return PREV_REASON.mixedOldSite;
+    return noData;
+  });
+}
+
+/* ─────────────────────── 검색어 행이 들어온 날 ─────────────────────── */
+
+/** 검색어 행이 하나라도 있는 날 */
+export function queryDays(bundle: StatsBundle | null, when: When): Set<string> {
+  return new Set(pickRows(bundle, "query", SEARCH_SOURCES, when).map((row) => row.date).filter(Boolean));
+}
+
+export type QueryCoverage = {
+  /** 견주는 이번 기간 날짜. 앞 기간과 짝이 있으면 두 기간 모두 검색어 자료가 있는 날만, 짝이 없으면 이번 기간 자료가 있는 날 전부 */
+  dates: string[];
+  /** dates 와 같은 자리의 앞 기간 날짜(prevDateOf). 견줄 짝이 없으면 빈 배열 */
+  prevDates: string[];
+  /** dates 의 처음 · 마지막 날 */
+  from: string;
+  to: string;
+  /** 실제로 견준 날 수(= dates 길이) */
+  days: number;
+  /** 견준 앞 기간의 처음 · 마지막 날. 견줄 짝이 하나도 없으면 null */
+  prevFrom: string | null;
+  prevTo: string | null;
+  /** 이번 기간에 검색어 자료가 있는 날 수(짝과 상관없이) */
+  currentDays: number;
+};
+
+/**
+ * 검색어별 숫자를 견줄 날.
+ * 이번 기간 날짜와 같은 자리의 앞 기간 날짜(prevDateOf)를 짝짓고, 두 날 모두 검색어 행이 있는 짝만 남긴다.
+ * 검색어 행은 늦게 들어오거나 중간에 빠질 수 있다. 한쪽만 자료가 있는 날을 넣으면 없는 쪽이 0 처럼 셈해져 늘거나 준 것처럼 보인다.
+ * 앞 기간 검색어 행이 하나도 짝지어지지 않거나 앞 기간이 옛 사이트면 앞 기간은 null(견줄 수 없음)이고, 이번 기간은 자료가 있는 날 전부를 쓴다.
+ */
+export function queryCoverage(bundle: StatsBundle | null): QueryCoverage | null {
+  const range = readActualRange(bundle);
+  if (!range) return null;
+  const inRange = (days: Set<string>, from: string, to: string) =>
+    [...days].filter((date) => date >= from && date <= to).sort();
+  const curDates = inRange(queryDays(bundle, "current"), range.actualFrom, range.actualTo);
+  if (curDates.length === 0) return null;
+  const prevSet = new Set(
+    previousIsOldSite(bundle) ? [] : inRange(queryDays(bundle, "previous"), range.prevFrom, range.prevTo)
+  );
+  const prevOf = prevDateOf(bundle);
+  const pairs = curDates
+    .map((date) => ({ date, prev: prevOf(date) }))
+    .filter((pair): pair is { date: string; prev: string } => pair.prev != null && prevSet.has(pair.prev));
+  const dates = pairs.length > 0 ? pairs.map((pair) => pair.date) : curDates;
+  const prevDates = pairs.map((pair) => pair.prev);
+  return {
+    dates,
+    prevDates,
+    from: dates[0],
+    to: dates[dates.length - 1],
+    days: dates.length,
+    prevFrom: prevDates[0] ?? null,
+    prevTo: prevDates[prevDates.length - 1] ?? null,
+    currentDays: curDates.length
+  };
+}
+
+/**
+ * 검색어 행(kind=query)만 견줄 날(queryCoverage)로 거른다. 두 기간 모두 자료가 있는 날 짝만 남는다.
+ * 견줄 짝이 없으면 이번 기간은 자료가 있는 날 전부, 앞 기간은 비운다.
+ */
+export function trimQueriesToCoverage(bundle: StatsBundle | null): StatsBundle | null {
+  if (!bundle) return bundle;
+  const cover = queryCoverage(bundle);
+  if (!cover) return bundle;
+  const isGsc = (row: StatsPoint) => (SEARCH_SOURCES as readonly string[]).includes(row.source);
+  const curKeep = new Set(cover.dates);
+  const prevKeep = new Set(cover.prevDates);
+  const keep = (row: StatsPoint, days: Set<string>) => !isGsc(row) || !row.date || days.has(row.date);
+  const query = bundle.query;
+  if (!query) return bundle;
+  return {
+    ...bundle,
+    query: {
+      ...query,
+      current: query.current.filter((row) => keep(row, curKeep)),
+      previous: query.previous.filter((row) => keep(row, prevKeep))
+    }
+  };
 }

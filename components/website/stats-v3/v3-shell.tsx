@@ -8,10 +8,18 @@
 import { useEffect, useMemo, useState, type ComponentType, type ReactNode } from "react";
 
 import { useStatsActionsLoader } from "@/components/website/stats/stats-actions";
-import { previousIsOldSite, readActualRange } from "@/components/website/stats/stats-data";
+import { readActualRange, readLaunchDate, SITE_LAUNCH_DATE } from "@/components/website/stats/stats-data";
 import type { LoadStatus } from "@/components/website/stats/stats-slot";
 import { V3Ai } from "@/components/website/stats-v3/v3-ai";
-import { aiDayBucket, aiDayRanges, prevDayRanges, type V3AiDays } from "@/components/website/stats-v3/v3-ai-days";
+import {
+  aiDayBucket,
+  aiDayRanges,
+  prevSlotPlan,
+  prevSlotsFrom,
+  type AiDayRange,
+  type AiPrevSlot,
+  type V3AiDays
+} from "@/components/website/stats-v3/v3-ai-days";
 import { useV3Catalog } from "@/components/website/stats-v3/v3-catalog";
 import { V3Content } from "@/components/website/stats-v3/v3-content";
 import { V3Live } from "@/components/website/stats-v3/v3-live";
@@ -53,18 +61,21 @@ import {
 type ExtrasRange = {
   from: string;
   to: string;
-  /** 앞 기간(본 응답의 prev_from ~ prev_to). 모르면 빈 글 */
+  /** 앞 기간(본 응답의 prev_from ~ prev_to). 모르면 빈 글 → 칸마다 「비교 기간 밖」 */
   prevFrom: string;
   prevTo: string;
-  /** 앞 기간이 새 홈페이지를 열기 전이면 앞 기간 칸은 받지 않는다 */
-  oldSite: boolean;
+  /** 새 홈페이지를 연 날. 이보다 앞에 걸친 앞 기간 칸은 받지 않는다 */
+  launch: string | null;
 };
 
-/** 앞 기간 칸을 받지 않을 때 마우스 상자에 쓰는 까닭. 받을 수 있으면 null */
-function previousSkipReason(range: ExtrasRange): string | null {
-  if (range.oldSite) return "앞 기간은 새 홈페이지를 열기 전";
-  if (!range.prevFrom || !range.prevTo) return "앞 기간 날짜를 알 수 없음";
-  return null;
+type DayFetch = { ok: true; bundle: StatsBundle | null } | { ok: false };
+
+/** 하루(또는 묶음) 칸 하나 받기. 거절(예외)도 실패로 바꿔 돌려준다. 페이지가 깨지지 않게 */
+function fetchDay(day: { from: string; to: string }, signal: AbortSignal): Promise<DayFetch> {
+  return getStatsBundle({ from: day.from, to: day.to, kinds: ["bots", "ai_visits"], signal }).then(
+    (result): DayFetch => (result.ok ? { ok: true, bundle: result.data.bundle } : { ok: false }),
+    (): DayFetch => ({ ok: false })
+  );
 }
 
 function useV3Extras(enabled: boolean, range: ExtrasRange | null, mainFailed = false): V3Extras {
@@ -72,67 +83,79 @@ function useV3Extras(enabled: boolean, range: ExtrasRange | null, mainFailed = f
   const to = range?.to ?? "";
   const prevFrom = range?.prevFrom ?? "";
   const prevTo = range?.prevTo ?? "";
-  const oldSite = range?.oldSite ?? false;
+  const launch = range?.launch ?? null;
   const key = `${from}|${to}`;
+  const prevKey = `${from}|${to}|${prevFrom}|${prevTo}|${launch ?? ""}`;
   const [answers, setAnswers] = useState<{ key: string; summary: AiAnswerSummary | null; ok: boolean } | null>(null);
   const [days, setDays] = useState<{ key: string; value: V3AiDays } | null>(null);
+  const [prevSlots, setPrevSlots] = useState<{ key: string; slots: AiPrevSlot[] } | null>(null);
 
+  // ① 이번 기간: 앞 기간을 기다리지 않고 먼저 그린다
   useEffect(() => {
     if (!enabled || !from || !to || from > to) return;
     const controller = new AbortController();
     const signal = controller.signal;
     const at = `${from}|${to}`;
-    void getAiAnswerSummary({ from, to, signal }).then((result) => {
-      if (signal.aborted) return;
-      // 표가 아직 없거나 읽기 실패면 「기록 없음」으로 둔다
-      setAnswers({ key: at, summary: result.ok ? result.data : null, ok: result.ok });
-    });
+    void getAiAnswerSummary({ from, to, signal }).then(
+      (result) => {
+        if (signal.aborted) return;
+        // 표가 아직 없거나 읽기 실패면 「기록 없음」으로 둔다
+        setAnswers({ key: at, summary: result.ok ? result.data : null, ok: result.ok });
+      },
+      () => {
+        if (!signal.aborted) setAnswers({ key: at, summary: null, ok: false });
+      }
+    );
     const ranges = aiDayRanges(from, to);
-    const fetchDay = (day: { from: string; to: string }) =>
-      getStatsBundle({ from: day.from, to: day.to, kinds: ["bots", "ai_visits"], signal });
-    // 같은 자리 앞 기간 칸: 마우스 상자에서 견줄 값. 받기 실패해도 이번 기간 그래프는 그린다
-    const skip = previousSkipReason({ from, to, prevFrom, prevTo, oldSite });
-    const prevRanges = skip ? null : prevDayRanges(ranges, from, prevFrom, prevTo);
-    const prevJob = prevRanges
-      ? Promise.all(prevRanges.map((day) => (day ? fetchDay(day) : Promise.resolve(null))))
-      : Promise.resolve(null);
-    void Promise.all([Promise.all(ranges.map(fetchDay)), prevJob]).then(([results, prevResults]) => {
+    void Promise.allSettled(ranges.map((day) => fetchDay(day, signal))).then((settled) => {
       if (signal.aborted) return;
+      const results = settled.map((item) => (item.status === "fulfilled" ? item.value : ({ ok: false } as DayFetch)));
+      // 이번 기간은 한 칸이라도 빠지면 선이 거짓이 되므로 「불러오지 못함」으로 둔다
       if (results.some((result) => !result.ok)) {
         setDays({ key: at, value: { state: "error", buckets: [] } });
         return;
       }
-      const bundles = results.map((result) => (result.ok ? result.data.bundle : null));
-      const prevFailed = prevResults != null && prevResults.some((result) => result != null && !result.ok);
-      const previous =
-        prevRanges && prevResults && !prevFailed
-          ? prevRanges.map((day, i) => {
-              const result = prevResults[i];
-              return day && result && result.ok ? aiDayBucket(day, result.data.bundle) : null;
-            })
-          : null;
+      const bundles = results.map((result) => (result.ok ? result.bundle : null));
       setDays({
         key: at,
         value: {
           state: "ready",
-          buckets: ranges.map((range, i) => aiDayBucket(range, bundles[i])),
-          since: bundles.find((bundle) => bundle?.bots?.bots?.since)?.bots?.bots?.since ?? null,
-          previous,
-          previousReason: skip ?? (prevFailed ? "앞 기간 자료를 받지 못함" : null)
+          buckets: ranges.map((day, i) => aiDayBucket(day, bundles[i])),
+          since: bundles.find((bundle) => bundle?.bots?.bots?.since)?.bots?.bots?.since ?? null
         }
       });
     });
     return () => controller.abort();
-  }, [enabled, from, to, prevFrom, prevTo, oldSite]);
+  }, [enabled, from, to]);
+
+  // ② 앞 기간: 따로 받는다. 받은 칸만 붙이고, 실패 · 거절된 칸은 그 칸만 「앞 기간 자료를 받지 못함」
+  useEffect(() => {
+    if (!enabled || !from || !to || from > to) return;
+    const controller = new AbortController();
+    const signal = controller.signal;
+    const at = `${from}|${to}|${prevFrom}|${prevTo}|${launch ?? ""}`;
+    const plan = prevSlotPlan(aiDayRanges(from, to), from, prevFrom, prevTo, launch);
+    const wanted = plan.filter((slot) => !slot.reason && slot.range).map((slot) => slot.range as AiDayRange);
+    void Promise.allSettled(wanted.map((day) => fetchDay(day, signal))).then((settled) => {
+      if (signal.aborted) return;
+      setPrevSlots({ key: at, slots: prevSlotsFrom(plan, settled) });
+    });
+    return () => controller.abort();
+  }, [enabled, from, to, prevFrom, prevTo, launch]);
 
   const answersNow = range && answers && answers.key === key ? answers : null;
   const daysNow = range && days && days.key === key ? days.value : null;
+  const prevNow = range && prevSlots && prevSlots.key === prevKey ? prevSlots.slots : null;
   return {
     answers: answersNow
       ? { state: answersNow.ok ? "ready" : "none", summary: answersNow.summary }
       : { state: "loading", summary: null },
     aiDays: enabled
-      ? (daysNow ?? (mainFailed ? { state: "error", buckets: [] } : { state: "loading", buckets: [] }))
+      ? daysNow
+        ? { ...daysNow, previous: prevNow }
+        : mainFailed
+          ? { state: "error", buckets: [] }
+          : { state: "loading", buckets: [] }
       : { state: "off", buckets: [] }
   };
 }
@@ -295,13 +318,13 @@ export function V3Shell({ screen }: { screen: V3ScreenId }) {
   const extrasTo = bundleFresh ? (apiRange?.actualTo ?? to) : null;
   const extrasPrevFrom = bundleFresh ? (apiRange?.prevFrom ?? "") : "";
   const extrasPrevTo = bundleFresh ? (apiRange?.prevTo ?? "") : "";
-  const extrasOldSite = bundleFresh ? previousIsOldSite(bundle) : false;
+  const extrasLaunch = bundleFresh ? (readLaunchDate(bundle) ?? SITE_LAUNCH_DATE ?? null) : null;
   const extrasRange = useMemo(
     () =>
       extrasFrom && extrasTo
-        ? { from: extrasFrom, to: extrasTo, prevFrom: extrasPrevFrom, prevTo: extrasPrevTo, oldSite: extrasOldSite }
+        ? { from: extrasFrom, to: extrasTo, prevFrom: extrasPrevFrom, prevTo: extrasPrevTo, launch: extrasLaunch }
         : null,
-    [extrasFrom, extrasTo, extrasPrevFrom, extrasPrevTo, extrasOldSite]
+    [extrasFrom, extrasTo, extrasPrevFrom, extrasPrevTo, extrasLaunch]
   );
   const extras = useV3Extras(screen === "ai", extrasRange, status === "error");
   const markRange = apiRange

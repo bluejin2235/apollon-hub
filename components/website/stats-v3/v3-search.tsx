@@ -96,6 +96,7 @@ function GroupNumber({ title, hint, group }: { title: string; hint: string; grou
 function KeywordChangeCell({ change }: { change: KeywordChange }) {
   if (change.type === "new") return <Badge>새로 잡힘</Badge>;
   if (change.type === "none") return <Badge>비교 불가</Badge>;
+  if (change.type === "nopair") return <>—</>;
   return <Change delta={change.delta} />;
 }
 
@@ -113,8 +114,6 @@ function SearchTrends({ bundle, today }: { bundle: StatsBundle | null; today: st
   const lag = lagText(bundle, year);
   const labels = (dates: string[]) => dates.map(axisLabel);
   const prevHeads = (dates: (string | null)[]) => dates.map((date) => (date ? axisLabel(date) : null));
-  // 마우스 상자에서 앞 기간 값이 없을 때 쓰는 까닭
-  const prevReason = unfair ? "앞 기간은 새 홈페이지를 열기 전" : "같은 자리 앞 기간 날에 검색어 자료가 없음";
 
   const clickFact = trendFact({ name: "구글 검색에서 눌린 횟수", unit: "번", current: clicks.current, previous: clicks.previous, unfairReason: unfair });
   const impFact = trendFact({ name: "구글 검색에 보인 횟수", unit: "번", current: impressions.current, previous: impressions.previous, unfairReason: unfair });
@@ -148,6 +147,7 @@ function SearchTrends({ bundle, today }: { bundle: StatsBundle | null; today: st
               prevDates={clicks.prevDates}
               current={clicks.current}
               previous={clicks.previous}
+              prevReason={clicks.prevReasons}
               unit="번"
               format={countTick}
               ariaLabel="구글 검색 클릭 날짜별"
@@ -165,6 +165,7 @@ function SearchTrends({ bundle, today }: { bundle: StatsBundle | null; today: st
               prevDates={impressions.prevDates}
               current={impressions.current}
               previous={impressions.previous}
+              prevReason={impressions.prevReasons}
               unit="번"
               format={countTick}
               ariaLabel="구글 검색 노출 날짜별"
@@ -190,7 +191,7 @@ function SearchTrends({ bundle, today }: { bundle: StatsBundle | null; today: st
                 { name: "구글이 숨긴 검색어", values: splitImp.hidden, previous: splitImp.prevHidden }
               ]}
               prevTipHeads={prevHeads(splitImp.prevDates)}
-              prevReason={prevReason}
+              prevReason={splitImp.prevReasons}
               unit="번"
               format={countTick}
               ariaLabel="회사 이름 일반 명사 숨긴 검색어 노출 날짜별"
@@ -214,7 +215,7 @@ function SearchTrends({ bundle, today }: { bundle: StatsBundle | null; today: st
                 { name: "구글이 숨긴 검색어", values: splitClk.hidden, previous: splitClk.prevHidden }
               ]}
               prevTipHeads={prevHeads(splitClk.prevDates)}
-              prevReason={prevReason}
+              prevReason={splitClk.prevReasons}
               unit="번"
               format={countTick}
               ariaLabel="회사 이름 일반 명사 숨긴 검색어 클릭 날짜별"
@@ -244,7 +245,7 @@ function SearchTrends({ bundle, today }: { bundle: StatsBundle | null; today: st
                 prevDates={target.prevDates}
                 current={target.current}
                 previous={target.previous}
-                prevReason={prevReason}
+                prevReason={target.prevReasons}
                 unit="번"
                 format={countTick}
                 ariaLabel="목표 키워드 노출 날짜별"
@@ -286,7 +287,10 @@ function TargetKeywords({ view, status, lag }: { view: TargetKeywordsView; statu
               ? `${payload.total}개 · 국문 ${ko} · 영문 ${en} · 10위 안 ${payload.top10}개 · 아직 검색 결과에 안 보임 ${payload.not_seen}개`
               : "목표 키워드 목록을 아직 읽지 못했어요"}
           </p>
-          <p className="v3-tiny">{lag}</p>
+          <p className="v3-tiny">
+            {lag}
+            {view.compareNote ? ` · ${view.compareNote}` : ""}
+          </p>
         </div>
         <Link className="v3-tiny" href="/website/stats/keywords">
           목표 키워드 설정 →

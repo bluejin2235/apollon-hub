@@ -71,7 +71,7 @@ function readPeriodUsers(bundle: StatsBundle | null): PeriodUsersCompare | null 
 /**
  * 방문자: 기간 전체를 한 번 센 값(period_users)만 쓴다.
  * 없을 때 날짜별 방문자를 더하면 여러 날 온 사람을 여러 번 세므로 대신 쓰지 않고 null 로 둔다.
- * 날짜별 자료는 있는데 기간 값만 빠졌으면 periodMissing=true: 카드 아래에 알림을 붙인다.
+ * 응답은 왔는데 period_users.current 가 없으면 날짜별 행이 있든 없든 periodMissing=true: 카드 아래에 알림을 붙인다.
  */
 function visitsOf(bundle: StatsBundle | null): {
   current: number | null;
@@ -92,7 +92,7 @@ function visitsOf(bundle: StatsBundle | null): {
     current: null,
     previous: null,
     periodUsers: false,
-    periodMissing: ga4(bundle, "daily", "current").some((row) => typeof row.users === "number")
+    periodMissing: bundle != null
   };
 }
 
@@ -323,8 +323,8 @@ export function buildSummaryBriefFacts(
 
   const visits = visitsOf(bundle);
   const impressions = total(gsc, "impressions");
-  // 기간 방문자만 못 받은 날(periodMissing)은 다른 숫자가 있으니 루나를 부른다. 방문자는 비워서 넘긴다
-  if (visits.current == null && !visits.periodMissing && impressions == null) return null;
+  // 방문자 · 날짜별 행 · 검색 노출이 모두 없을 때만 루나를 부르지 않는다. 기간 방문자만 빠졌으면 방문자는 비워서 넘긴다
+  if (visits.current == null && daily.length === 0 && impressions == null) return null;
 
   const impressionsPrev = total(gscPrev, "impressions");
   const clicks = total(gsc, "clicks");

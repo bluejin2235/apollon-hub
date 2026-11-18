@@ -307,6 +307,15 @@ function SeriesChart({ labels, series, mini, area, marks = [], format, ariaLabel
   );
 }
 
+/** 앞 기간 값이 빈 까닭: 그림 전체에 하나, 또는 점마다 하나(값이 있는 점은 null) */
+export type PrevReason = string | null | (string | null)[];
+
+/** 점 i 의 까닭 */
+export function reasonAt(reason: PrevReason | undefined, i: number): string | null {
+  if (reason == null) return null;
+  return typeof reason === "string" ? reason : (reason[i] ?? null);
+}
+
 export type LineChartProps = {
   /** 점마다 가로축 글자 */
   labels: string[];
@@ -321,7 +330,7 @@ export type LineChartProps = {
   /** 상자 앞 기간 줄의 날짜 글(묶음이면 두 날짜). 없으면 prevDates */
   prevTipHeads?: (string | null)[];
   /** 앞 기간 값이 없는 점에서 상자에 쓰는 까닭. 없으면 「앞 기간 기록 없음」 */
-  prevReason?: string | null;
+  prevReason?: PrevReason;
   /** 상자 숫자 뒤 단위 — 명 · 회 · 개 */
   unit?: string;
   mini?: boolean;
@@ -372,7 +381,7 @@ export function LineChart(props: LineChartProps) {
     lines.push(
       typeof before === "number"
         ? `${prevDay ?? "같은 순번 날"} · 앞 기간 ${tipFmt(before)}`
-        : `${prevDay ? `${prevDay} · ` : ""}${prevReason ? `앞 기간 자료 없음 (${prevReason})` : "앞 기간 기록 없음"}`
+        : `${prevDay ? `${prevDay} · ` : ""}${reasonAt(prevReason, i) ? `앞 기간 자료 없음 (${reasonAt(prevReason, i)})` : "앞 기간 기록 없음"}`
     );
     return { lines, keys: ["current", "previous"] as ChartSeries["look"][] };
   };
@@ -418,7 +427,7 @@ export type MultiLineChartProps = {
   /** 상자 앞 기간 줄의 날짜 글(같은 자리 앞 기간 날) */
   prevTipHeads?: (string | null)[];
   /** 앞 기간 값이 하나도 없는 점에서 상자에 쓰는 까닭: 「앞 기간 자료 없음 (까닭)」 */
-  prevReason?: string | null;
+  prevReason?: PrevReason;
   unit?: string;
   mini?: boolean;
   format?: (value: number) => string;
@@ -458,7 +467,7 @@ export function MultiLineChart({
       lines.push(
         anyPrev
           ? `앞 기간 견준 날 ${prevHead ?? "같은 자리 날"}`
-          : `${prevHead ? `${prevHead} · ` : ""}앞 기간 자료 없음${prevReason ? ` (${prevReason})` : ""}`
+          : `${prevHead ? `${prevHead} · ` : ""}앞 기간 자료 없음${reasonAt(prevReason, i) ? ` (${reasonAt(prevReason, i)})` : ""}`
       );
       keys.push(null);
     }

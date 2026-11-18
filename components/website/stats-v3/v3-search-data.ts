@@ -12,7 +12,6 @@ import {
   makeCountDelta,
   pickRows,
   previousIsOldSite,
-  readActualRange,
   type DeltaView
 } from "@/components/website/stats/stats-data";
 import {
@@ -20,9 +19,12 @@ import {
   genericClicksOf,
   normalizePath,
   pathLang,
-  prevDateOf,
   prevDatesOf,
   prevGuard,
+  prevReasonsOf,
+  queryCoverage,
+  queryDays,
+  trimQueriesToCoverage,
   SEARCH_SOURCES,
   type DaySeries,
   type When
@@ -31,6 +33,9 @@ import { normalizeKeyword } from "@/components/website/stats-v3/v3-keywords-data
 import type { StatsBundle, StatsPoint } from "@/lib/website/stats";
 
 const NONE: DeltaView = { delta: null, tone: "flat", previous: null };
+
+/** 검색어별 그래프에서 「자료 없음」 대신 쓰는 까닭 */
+const QUERY_NO_DATA = "검색어 자료 없음";
 
 function gsc(bundle: StatsBundle | null, kind: string, when: When): StatsPoint[] {
   return pickRows(bundle, kind, SEARCH_SOURCES, when);
@@ -63,87 +68,9 @@ export function searchGroups(bundle: StatsBundle | null): { brand: SearchGroup; 
   };
 }
 
-/* ─────────────────────── 검색어 행이 들어온 날 ─────────────────────── */
+/* ─────────────────────── 검색어 행이 들어온 날 (계산은 v3-data.ts) ─────────────────────── */
 
-/** 검색어 행이 하나라도 있는 날 */
-export function queryDays(bundle: StatsBundle | null, when: When): Set<string> {
-  return new Set(gsc(bundle, "query", when).map((row) => row.date).filter(Boolean));
-}
-
-export type QueryCoverage = {
-  /** 견주는 이번 기간 날짜. 앞 기간과 짝이 있으면 두 기간 모두 검색어 자료가 있는 날만, 짝이 없으면 이번 기간 자료가 있는 날 전부 */
-  dates: string[];
-  /** dates 와 같은 자리의 앞 기간 날짜(prevDateOf). 견줄 짝이 없으면 빈 배열 */
-  prevDates: string[];
-  /** dates 의 처음 · 마지막 날 */
-  from: string;
-  to: string;
-  /** 실제로 견준 날 수(= dates 길이) */
-  days: number;
-  /** 견준 앞 기간의 처음 · 마지막 날. 견줄 짝이 하나도 없으면 null */
-  prevFrom: string | null;
-  prevTo: string | null;
-  /** 이번 기간에 검색어 자료가 있는 날 수(짝과 상관없이) */
-  currentDays: number;
-};
-
-/**
- * 검색어별 숫자를 견줄 날.
- * 이번 기간 날짜와 같은 자리의 앞 기간 날짜(prevDateOf)를 짝짓고, 두 날 모두 검색어 행이 있는 짝만 남긴다.
- * 검색어 행은 늦게 들어오거나 중간에 빠질 수 있다. 한쪽만 자료가 있는 날을 넣으면 없는 쪽이 0 처럼 셈해져 늘거나 준 것처럼 보인다.
- * 앞 기간 검색어 행이 하나도 짝지어지지 않거나 앞 기간이 옛 사이트면 앞 기간은 null(견줄 수 없음)이고, 이번 기간은 자료가 있는 날 전부를 쓴다.
- */
-export function queryCoverage(bundle: StatsBundle | null): QueryCoverage | null {
-  const range = readActualRange(bundle);
-  if (!range) return null;
-  const inRange = (days: Set<string>, from: string, to: string) =>
-    [...days].filter((date) => date >= from && date <= to).sort();
-  const curDates = inRange(queryDays(bundle, "current"), range.actualFrom, range.actualTo);
-  if (curDates.length === 0) return null;
-  const prevSet = new Set(
-    previousIsOldSite(bundle) ? [] : inRange(queryDays(bundle, "previous"), range.prevFrom, range.prevTo)
-  );
-  const prevOf = prevDateOf(bundle);
-  const pairs = curDates
-    .map((date) => ({ date, prev: prevOf(date) }))
-    .filter((pair): pair is { date: string; prev: string } => pair.prev != null && prevSet.has(pair.prev));
-  const dates = pairs.length > 0 ? pairs.map((pair) => pair.date) : curDates;
-  const prevDates = pairs.map((pair) => pair.prev);
-  return {
-    dates,
-    prevDates,
-    from: dates[0],
-    to: dates[dates.length - 1],
-    days: dates.length,
-    prevFrom: prevDates[0] ?? null,
-    prevTo: prevDates[prevDates.length - 1] ?? null,
-    currentDays: curDates.length
-  };
-}
-
-/**
- * 검색어 행(kind=query)만 견줄 날(queryCoverage)로 거른다. 두 기간 모두 자료가 있는 날 짝만 남는다.
- * 견줄 짝이 없으면 이번 기간은 자료가 있는 날 전부, 앞 기간은 비운다.
- */
-export function trimQueriesToCoverage(bundle: StatsBundle | null): StatsBundle | null {
-  if (!bundle) return bundle;
-  const cover = queryCoverage(bundle);
-  if (!cover) return bundle;
-  const isGsc = (row: StatsPoint) => (SEARCH_SOURCES as readonly string[]).includes(row.source);
-  const curKeep = new Set(cover.dates);
-  const prevKeep = new Set(cover.prevDates);
-  const keep = (row: StatsPoint, days: Set<string>) => !isGsc(row) || !row.date || days.has(row.date);
-  const query = bundle.query;
-  if (!query) return bundle;
-  return {
-    ...bundle,
-    query: {
-      ...query,
-      current: query.current.filter((row) => keep(row, curKeep)),
-      previous: query.previous.filter((row) => keep(row, prevKeep))
-    }
-  };
-}
+export { queryCoverage, queryDays, trimQueriesToCoverage, type QueryCoverage } from "@/components/website/stats-v3/v3-data";
 
 /** 검색 숫자(회사 이름 · 일반 명사)를 센 날: 견준 날 수와 이번 기간 자료가 있는 날 수를 함께 */
 export function searchRange(bundle: StatsBundle | null): {
@@ -295,6 +222,8 @@ export type GscDays = {
   prevDates: (string | null)[];
   current: (number | null)[];
   previous: (number | null)[];
+  /** 점마다 앞 기간 값이 빈 까닭(prevReasonsOf). 값이 있으면 null */
+  prevReasons: (string | null)[];
 };
 
 /** 구글 일별 합계(클릭 · 노출) — 검색어를 숨긴 것까지 다 들어 있는 숫자. 앞 기간은 기간 길이만큼 앞 날짜 */
@@ -312,11 +241,13 @@ export function gscDaySeries(bundle: StatsBundle | null, field: "clicks" | "impr
   const prev = prevGuard(bundle)(byDay("previous"));
   const dates = [...cur.keys()].sort();
   const prevDates = prevDatesOf(bundle, dates);
+  const previous = prevDates.map((date) => (prev && date ? (prev.get(date) ?? null) : null));
   return {
     dates,
     prevDates,
     current: dates.map((date) => cur.get(date) ?? null),
-    previous: prevDates.map((date) => (prev && date ? (prev.get(date) ?? null) : null))
+    previous,
+    prevReasons: prevReasonsOf(bundle, prevDates, (i) => typeof previous[i] === "number")
   };
 }
 
@@ -335,6 +266,8 @@ export type SplitDays = {
   prevBrand: (number | null)[];
   prevGeneric: (number | null)[];
   prevHidden: (number | null)[];
+  /** 점마다 앞 기간 값이 빈 까닭. 그 날 앞 기간 검색어 행이 없으면 「검색어 자료 없음」 */
+  prevReasons: (string | null)[];
 };
 
 /** 검색어 행을 날짜별 회사 이름 · 일반 명사로 더한다 */
@@ -380,7 +313,16 @@ export function brandSplitDays(bundle: StatsBundle | null, field: "clicks" | "im
       const sum = total.previous[i];
       if (typeof sum !== "number") return null;
       return prevOn(date, (day) => Math.max(0, sum - (before.brand.get(day) ?? 0) - (before.generic.get(day) ?? 0)));
-    })
+    }),
+    prevReasons: prevReasonsOf(
+      bundle,
+      total.prevDates,
+      (i) => {
+        const date = total.prevDates[i];
+        return date != null && prevCovered.has(date);
+      },
+      QUERY_NO_DATA
+    )
   };
 }
 
@@ -415,6 +357,7 @@ export function targetKeywordDays(bundle: StatsBundle | null): {
   prevDates: (string | null)[];
   current: (number | null)[];
   previous: (number | null)[];
+  prevReasons: (string | null)[];
   keywords: number;
 } | null {
   const payload = bundle?.target_keywords?.target_keywords;
@@ -438,6 +381,15 @@ export function targetKeywordDays(bundle: StatsBundle | null): {
     prevDates,
     current: dates.map((date) => (covered.has(date) ? (map.get(date) ?? 0) : null)),
     previous: prevDates.map((date) => (date && prevCovered.has(date) ? (before.get(date) ?? 0) : null)),
+    prevReasons: prevReasonsOf(
+      bundle,
+      prevDates,
+      (i) => {
+        const date = prevDates[i];
+        return date != null && prevCovered.has(date);
+      },
+      QUERY_NO_DATA
+    ),
     keywords: payload.rows.length
   };
 }
