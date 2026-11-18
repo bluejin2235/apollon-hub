@@ -448,7 +448,7 @@ function MemoBox({
           className="min-h-[96px] w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
           placeholder="예: @이름 견적 범위 같이 봐 주세요"
           value={memo}
-          disabled={!isReady}
+          disabled={!isReady || saving}
           maxLength={MEMO_MAX}
           onChange={(event) => {
             setMemo(event.target.value);
