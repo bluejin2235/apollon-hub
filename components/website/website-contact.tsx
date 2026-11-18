@@ -419,7 +419,8 @@ function MemoBox({
       // 남이 먼저 저장했다. 최신 저장본을 기준으로 삼고, 내 글은 칸에 두고 최신 메모를 보여 준다
       const latest = result.details && typeof result.details === "object" ? (result.details as InquiryItem) : null;
       if (latest && latest.id === item.id) {
-        onSaved(latest);
+        // 메모만 바꾼다. 응답 속 처리 상태 · 읽음은 옛 값일 수 있어 지금 화면 값을 지킨다(코덱스 20차)
+        onSaved({ ...item, memo: latest.memo });
         setBase(latest.memo ?? "");
         setConflict(latest.memo ?? "");
       }
@@ -433,7 +434,9 @@ function MemoBox({
     if (!result.ok) {
       showToast({
         message:
-          result.error === "mention_lookup_failed"
+          result.error === "reload_required"
+            ? "허브가 새 버전으로 바뀌었습니다. 화면을 새로 고친 뒤 다시 저장해 주세요"
+            : result.error === "mention_lookup_failed"
             ? "부를 사람 목록을 읽지 못해 메모를 저장하지 않았습니다. 잠시 뒤 다시 눌러 주세요"
             : "메모를 저장하지 못했습니다. 잠시 뒤 다시 눌러 주세요",
         tone: "error",

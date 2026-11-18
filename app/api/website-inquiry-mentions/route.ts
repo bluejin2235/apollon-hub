@@ -86,6 +86,10 @@ export async function POST(request: NextRequest) {
   const memo = typeof record.memo === "string" ? record.memo.slice(0, MEMO_MAX) : "";
   /** 브라우저가 보고 고친 저장본. 지금 저장본과 다르면 남이 먼저 고친 것이라 덮어쓰지 않는다(코덱스 19차) */
   const expected = typeof record.expected === "string" ? record.expected : null;
+  // expected 를 안 보내는 옛 화면은 저장하지 않는다(남의 최신 메모를 덮지 않게, 코덱스 20차)
+  if (expected === null) {
+    return NextResponse.json({ error: "reload_required" }, { status: 409 });
+  }
   if (!ID_RE.test(inquiryId)) {
     return NextResponse.json({ error: "invalid_id" }, { status: 400 });
   }
@@ -113,7 +117,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  if (expected !== null && (previous.memo ?? "") !== expected) {
+  if ((previous.memo ?? "") !== expected) {
     return NextResponse.json({ error: "memo_changed", details: previous }, { status: 409 });
   }
 
