@@ -1266,3 +1266,50 @@
     display: none;
   }
 }
+
+/* ─────────── 설정 · 목표 키워드 ─────────── */
+
+.v3-settings {
+  padding-top: 24px;
+}
+
+.v3-settings > h1 {
+  margin: 4px 0 6px;
+}
+
+.v3-settings > .v3-tiny {
+  margin-bottom: 16px;
+  max-width: 720px;
+}
+
+.v3-paste {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 10px;
+  font: 12px/1.6 inherit;
+  resize: vertical;
+}
+
+.v3-paste-check {
+  margin-top: 10px;
+}
+
+.v3-row-actions {
+  white-space: nowrap;
+  text-align: right;
+}
+
+.v3-row-actions .v3-ghost + .v3-ghost {
+  margin-left: 6px;
+}
+
+.v3-dialog select {
+  width: 100%;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  margin-top: 5px;
+  font: inherit;
+  background: #fff;
+}

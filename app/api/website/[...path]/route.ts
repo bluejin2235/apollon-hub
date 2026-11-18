@@ -24,6 +24,18 @@ function statsActionBody(text: string, method: string, actorName: string | null)
   }
 }
 
+/** 목표 키워드를 고친 사람도 브라우저 값 대신 로그인 사용자 이름으로 채운다 */
+function targetKeywordBody(text: string, actorName: string | null): string | undefined {
+  if (!text) return undefined;
+  try {
+    const json = JSON.parse(text) as Record<string, unknown>;
+    json.updated_by = actorName?.trim() || null;
+    return JSON.stringify(json);
+  } catch {
+    return text;
+  }
+}
+
 async function proxy(request: NextRequest, ctx: Ctx, method: string) {
   const user = await getApiUser(request);
   if (!user) {
@@ -78,6 +90,8 @@ async function proxy(request: NextRequest, ctx: Ctx, method: string) {
         const text = await request.text();
         if (joined === "stats/actions" || joined.startsWith("stats/actions/")) {
           init.body = statsActionBody(text, method, actor.name);
+        } else if (joined === "stats/target-keywords" || joined.startsWith("stats/target-keywords/")) {
+          init.body = targetKeywordBody(text, actor.name);
         } else if (text) {
           if (method === "POST" && joined === "publish") {
             try {

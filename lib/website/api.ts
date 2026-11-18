@@ -14,7 +14,8 @@ import {
   type StatsBundle,
   type StatsBundleResult,
   type StatsQueryResult,
-  type StatsRealtime
+  type StatsRealtime,
+  type TargetKeywordItem
 } from "@/lib/website/stats";
 import type {
   ApiResult,
@@ -1316,6 +1317,48 @@ export function updateStatsAction(
 
 export function deleteStatsAction(id: string): Promise<ApiResult<{ id: string }>> {
   return websiteFetch<{ id: string }>(`stats/actions/${id}`, { method: "DELETE" });
+}
+
+/** 목표 키워드(3-8) — 보이는 것 + 내린 것 전부 */
+export function listTargetKeywords(signal?: AbortSignal): Promise<ApiResult<{ items: TargetKeywordItem[] }>> {
+  return websiteFetch<{ items: TargetKeywordItem[] }>("stats/target-keywords", { signal });
+}
+
+export type TargetKeywordWrite = {
+  keyword: string;
+  lang: "ko" | "en";
+  keyword_group?: string | null;
+  priority?: 1 | 2 | 3;
+  target_page?: string | null;
+  note?: string | null;
+};
+
+export type TargetKeywordAddResult = {
+  results: (
+    | { index: number; status: "added"; id: number }
+    | { index: number; status: "duplicate" | "invalid"; reason: string }
+  )[];
+  added: number;
+  items: TargetKeywordItem[];
+};
+
+/** 여러 줄 넣기. 중복·빈 칸·60자 넘음은 그 줄만 막힌다. 고친 사람은 Hub 프록시가 채운다 */
+export function addTargetKeywords(items: TargetKeywordWrite[]): Promise<ApiResult<TargetKeywordAddResult>> {
+  return websiteFetch<TargetKeywordAddResult>("stats/target-keywords", {
+    method: "POST",
+    body: JSON.stringify({ items })
+  });
+}
+
+/** 고치기 · 내리기(active=false) · 다시 보이기(active=true). 지우기는 없다 */
+export function updateTargetKeyword(
+  id: number,
+  body: Partial<TargetKeywordWrite> & { active?: boolean }
+): Promise<ApiResult<{ item: TargetKeywordItem }>> {
+  return websiteFetch<{ item: TargetKeywordItem }>(`stats/target-keywords/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(body)
+  });
 }
 
 export type StatsBriefTodo = {
