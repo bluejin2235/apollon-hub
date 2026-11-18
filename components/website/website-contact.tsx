@@ -319,6 +319,13 @@ function MemoBox({
 }) {
   const saved = item.memo ?? "";
   const [memo, setMemo] = useState(saved);
+  // 목록 행으로 먼저 열면 메모가 늦게 온다. 아직 고치지 않았으면 늦게 온 저장 메모로 바꾼다(빈 칸을 보고 덮어쓰지 않게, 코덱스 12차)
+  const baseRef = useRef(saved);
+  useEffect(() => {
+    if (baseRef.current === saved) return;
+    setMemo((current) => (current === baseRef.current ? saved : current));
+    baseRef.current = saved;
+  }, [saved]);
   const [saving, setSaving] = useState(false);
   const [query, setQuery] = useState<string | null>(null);
   const [active, setActive] = useState(0);
@@ -849,7 +856,7 @@ function InboxTab() {
         </div>
 
         <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
-          {listView === "items" && refreshFailed ? (
+          {refreshFailed && listView !== "loading" && listView !== "error" ? (
             <div className="flex items-center justify-between gap-3 border-b border-amber-200 bg-amber-50 px-4 py-2 text-xs text-amber-800" role="status">
               <span>목록을 새로 받지 못했습니다. 보이는 목록은 조금 전 것일 수 있어요.</span>
               <button
