@@ -99,21 +99,21 @@ function ReadCard({ bundle, status, catalog }: Pick<V3ScreenProps, "bundle" | "s
 }
 
 function useAnswerSummary(from: string, to: string): { view: AnswerView | null; state: "loading" | "ready" | "none" } {
-  const [summary, setSummary] = useState<AiAnswerSummary | null>(null);
-  const [state, setState] = useState<"loading" | "ready" | "none">("loading");
+  // 받은 값이 어느 기간 것인지 같이 둔다 — 기간을 바꾸면 새 응답 전까지 옛 기간 카드를 보이지 않게
+  const [loaded, setLoaded] = useState<{ key: string; summary: AiAnswerSummary | null; ok: boolean } | null>(null);
+  const key = `${from}|${to}`;
   useEffect(() => {
     const controller = new AbortController();
-    setState("loading");
     void getAiAnswerSummary({ from, to, signal: controller.signal }).then((result) => {
       if (controller.signal.aborted) return;
       // 표가 아직 없거나(DB 적용 전) 읽기 실패면 「준비 중」으로 둔다
-      setSummary(result.ok ? result.data : null);
-      setState(result.ok ? "ready" : "none");
+      setLoaded({ key: `${from}|${to}`, summary: result.ok ? result.data : null, ok: result.ok });
     });
     return () => controller.abort();
   }, [from, to]);
-  const view = useMemo(() => answerView(summary), [summary]);
-  return { view, state };
+  const current = loaded && loaded.key === key ? loaded : null;
+  const view = useMemo(() => answerView(current?.summary ?? null), [current]);
+  return { view, state: current ? (current.ok ? "ready" : "none") : "loading" };
 }
 
 function DiffCell({ diff }: { diff: number | null }) {
@@ -127,10 +127,11 @@ function AnswerCard({ from, to }: { from: string; to: string }) {
   const { view, state } = useAnswerSummary(from, to);
   if (view) {
     const rate = (n: number, d: number) => (d > 0 ? (n / d) * 100 : 0);
+    // 같은 질문 묶음(두 회차 모두 확인)끼리 언급 질문 비율 차이
     const pp =
-      view.questionsMentionedBefore != null && view.questionsCheckedBefore
+      view.questionsMentionedBefore != null && view.questionsMentionedComparable != null && view.questionsCheckedBefore
         ? Math.round(
-            (rate(view.questionsMentioned, view.questionsChecked) -
+            (rate(view.questionsMentionedComparable, view.questionsCheckedBefore) -
               rate(view.questionsMentionedBefore, view.questionsCheckedBefore)) *
               10
           ) / 10
@@ -154,8 +155,8 @@ function AnswerCard({ from, to }: { from: string; to: string }) {
           )}
           <small>
             {view.questionsMentionedBefore != null
-              ? `앞 회차 ${view.questionsMentionedBefore}개 질문 · 언급 비율 ${rate(view.mentioned, view.checked).toFixed(1)}%`
-              : `언급 비율 ${rate(view.mentioned, view.checked).toFixed(1)}% · 앞 회차 기록 없음`}
+              ? `앞 회차 ${view.questionsMentionedBefore}개 질문 · 언급 질문 비율 ${rate(view.questionsMentioned, view.questionsChecked).toFixed(1)}%`
+              : `언급 질문 비율 ${rate(view.questionsMentioned, view.questionsChecked).toFixed(1)}% · 앞 회차 기록 없음`}
           </small>
         </div>
         <h3>어떤 질문에 우리 이름이 나왔나요?</h3>

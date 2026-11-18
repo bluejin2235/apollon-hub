@@ -231,37 +231,56 @@ export function V3KeywordsSettings() {
   const ready = lines.filter((line) => line.item);
   const shown = tab === "active" ? active : removed;
 
+  /**
+   * 쓰기는 한 번에 하나만(넣기 · 고치기 · 내리기). 끝나면 목록을 다시 읽어
+   * 겹친 요청이 서로의 결과를 덮지 않게 한다. 쓰는 동안 붙여 넣기 칸도 잠근다.
+   */
   async function addAll() {
-    if (ready.length === 0) return;
+    if (ready.length === 0 || saving) return;
+    const submitted = ready;
+    const snapshot = paste;
     setSaving(true);
     setMessage(null);
-    const result = await addTargetKeywords(ready.map((line) => line.item as TargetKeywordWrite));
-    setSaving(false);
+    const result = await addTargetKeywords(submitted.map((line) => line.item as TargetKeywordWrite));
     if (!result.ok) {
+      setSaving(false);
       setMessage("넣지 못했습니다. 잠시 뒤 다시 해 주세요.");
       return;
     }
+    const added = new Set(
+      result.data.results.filter((r) => r.status === "added").map((r) => submitted[r.index]?.line)
+    );
     const blocked = result.data.results.filter((r) => r.status !== "added");
-    setItems(result.data.items);
+    // 넣은 줄만 지우고, 막힌 줄 · 검사에서 걸린 줄은 그대로 둔다
+    setPaste(
+      snapshot
+        .split(/\r?\n/)
+        .filter((raw, index) => raw.trim() !== "" && !added.has(index + 1))
+        .join("\n")
+    );
+    await load();
+    setSaving(false);
     setMessage(
       blocked.length === 0
         ? `${result.data.added}개를 넣었습니다.`
         : `${result.data.added}개를 넣었습니다. ${blocked.length}줄은 막혔습니다: ${blocked
-            .map((r) => `${ready[r.index]?.line ?? "?"}번 줄 ${"reason" in r ? REASON[r.reason] ?? r.reason : ""}`)
+            .map((r) => `${submitted[r.index]?.line ?? "?"}번 줄 ${"reason" in r ? REASON[r.reason] ?? r.reason : ""}`)
             .join(" · ")}`
     );
-    if (blocked.length === 0) setPaste("");
   }
 
   async function toggle(item: TargetKeywordItem) {
+    if (saving) return;
+    setSaving(true);
     setBusyId(item.id);
     const result = await updateTargetKeyword(item.id, { active: !item.active });
+    if (result.ok) await load();
     setBusyId(null);
+    setSaving(false);
     if (!result.ok) {
       setMessage("바꾸지 못했습니다.");
       return;
     }
-    setItems((list) => (list ?? []).map((row) => (row.id === item.id ? result.data.item : row)));
     setMessage(item.active ? `「${item.keyword}」을(를) 내렸습니다.` : `「${item.keyword}」을(를) 다시 보이게 했습니다.`);
   }
 
@@ -336,13 +355,14 @@ export function V3KeywordsSettings() {
                     <td className="v3-keyword-page">{item.target_page ?? "—"}</td>
                     <td>{dateText(tab === "active" ? item.added_at : item.removed_at)}</td>
                     <td className="v3-row-actions">
-                      <button type="button" className="v3-ghost" onClick={() => setEditing(item)}>
+                      <button type="button" className="v3-ghost" disabled={saving} onClick={() => setEditing(item)}>
                         고치기
                       </button>
                       <button
                         type="button"
                         className="v3-ghost"
-                        disabled={busyId === item.id}
+                        disabled={saving}
+                        aria-busy={busyId === item.id}
                         onClick={() => void toggle(item)}
                       >
                         {item.active ? "내리기" : "다시 보이기"}
@@ -370,6 +390,7 @@ export function V3KeywordsSettings() {
           className="v3-paste"
           rows={8}
           value={paste}
+          disabled={saving}
           placeholder={"미디어파사드\t국문\t대중어\t/expertise\nmedia facade design\t영문\t영문\t/en/expertise"}
           onChange={(event) => setPaste(event.target.value)}
           aria-label="목표 키워드 붙여 넣기"
@@ -402,9 +423,10 @@ export function V3KeywordsSettings() {
         item={editing}
         onClose={() => setEditing(null)}
         onSaved={(next) => {
-          setItems((list) => (list ?? []).map((row) => (row.id === next.id ? next : row)));
           setEditing(null);
           setMessage(`「${next.keyword}」을(를) 고쳤습니다.`);
+          setSaving(true);
+          void load().finally(() => setSaving(false));
         }}
       />
     </div>

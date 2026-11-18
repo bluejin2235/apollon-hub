@@ -23,7 +23,10 @@ export type AnswerView = {
   questionsChecked: number;
   /** 앞 회차의 같은 값. 앞 회차가 없으면 null */
   questionsMentionedBefore: number | null;
+  /** 두 회차 모두 확인한 질문 수 (비교 분모) */
   questionsCheckedBefore: number | null;
+  /** 그 질문들 가운데 이번 회차에 언급된 수 (비교 분자) */
+  questionsMentionedComparable: number | null;
   mentioned: number;
   checked: number;
   diffCount: number | null;
@@ -46,46 +49,52 @@ export function answerView(summary: AiAnswerSummary | null, limit = 8): AnswerVi
       const cell = key ? row.cells[key] : undefined;
       return cell ? cell.mentioned : null;
     });
-    let now = 0;
-    let before = 0;
+    // 증감은 두 회차 모두 확인한 AI 끼리만 센다(이번에 처음 확인한 AI 는 섞지 않는다)
+    let score = 0;
+    let nowBoth = 0;
+    let beforeBoth = 0;
     let comparable = false;
     for (const cell of Object.values(row.cells)) {
       if (!cell) continue;
-      if (cell.mentioned) now += 1;
+      if (cell.mentioned) score += 1;
       if (cell.previous != null) {
         comparable = true;
-        if (cell.previous) before += 1;
+        if (cell.mentioned) nowBoth += 1;
+        if (cell.previous) beforeBoth += 1;
       }
     }
     return {
       id: row.question_id,
       question: row.question,
       cells,
-      diff: comparable ? now - before : null,
-      score: now,
+      diff: comparable ? nowBoth - beforeBoth : null,
+      score,
       changed: row.changed
     };
   });
 
   rows.sort((a, b) => Number(b.changed) - Number(a.changed) || b.score - a.score || a.id - b.id);
 
+  // 큰 숫자: 이번 회차 전체. 비교: 두 회차 모두 확인한 질문·AI 끼리 같은 단위로
   let qNow = 0;
   let qChecked = 0;
+  let qNowBoth = 0;
   let qBefore = 0;
-  let qCheckedBefore = 0;
+  let qBoth = 0;
   for (const row of summary.grid) {
     const cells = Object.values(row.cells).filter((cell): cell is NonNullable<typeof cell> => Boolean(cell));
     if (cells.length > 0) {
       qChecked += 1;
       if (cells.some((cell) => cell.mentioned)) qNow += 1;
     }
-    const prevCells = cells.filter((cell) => cell.previous != null);
-    if (prevCells.length > 0) {
-      qCheckedBefore += 1;
-      if (prevCells.some((cell) => cell.previous)) qBefore += 1;
+    const both = cells.filter((cell) => cell.previous != null);
+    if (both.length > 0) {
+      qBoth += 1;
+      if (both.some((cell) => cell.mentioned)) qNowBoth += 1;
+      if (both.some((cell) => cell.previous)) qBefore += 1;
     }
   }
-  const hasBefore = summary.previous != null && qCheckedBefore > 0;
+  const hasBefore = summary.previous != null && qBoth > 0;
 
   return {
     latest: summary.latest,
@@ -93,7 +102,8 @@ export function answerView(summary: AiAnswerSummary | null, limit = 8): AnswerVi
     questionsMentioned: qNow,
     questionsChecked: qChecked,
     questionsMentionedBefore: hasBefore ? qBefore : null,
-    questionsCheckedBefore: hasBefore ? qCheckedBefore : null,
+    questionsCheckedBefore: hasBefore ? qBoth : null,
+    questionsMentionedComparable: hasBefore ? qNowBoth : null,
     mentioned: summary.total.mentioned,
     checked: summary.total.checked,
     diffCount: summary.total.diff_count,

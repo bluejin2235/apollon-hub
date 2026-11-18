@@ -230,3 +230,67 @@ describe("AI ② 답에 씀", () => {
     assert.equal(answerView({ ...summary, latest: null }), null);
   });
 });
+
+describe("코덱스 지적 반영", () => {
+  it("랜딩은 쿼리 문자열·끝 / 를 합친 경로로 고른다", () => {
+    const payload: TargetKeywordsPayload = {
+      total: 1,
+      goal: 30,
+      top10: 0,
+      not_seen: 0,
+      rows: [
+        {
+          id: 1,
+          keyword: "미디어아트",
+          lang: "ko",
+          keyword_group: null,
+          priority: 2,
+          target_page: null,
+          current: { impressions: 9, clicks: 2, position: 20 },
+          previous: { impressions: 0, clicks: 0, position: null },
+          newly_seen: true,
+          related_queries: 0
+        }
+      ]
+    };
+    const qp = (key2: string, clicks: number) =>
+      row("gsc", "query_page", "2026-11-17", { key: "미디어아트", key2, clicks, impressions: 3 });
+    const bundle: StatsBundle = {
+      target_keywords: { ...result("target_keywords", []), target_keywords: payload },
+      query_page: result("query_page", [qp("/works/a?x=1", 1), qp("/works/a/", 1), qp("/works/b", 1)])
+    };
+    const view = targetKeywordsView(bundle, EMPTY_TITLES);
+    assert.equal(view.rows[0].change.type, "new");
+    assert.ok(view.rows[0].landing);
+    assert.notEqual(view.rows[0].landing, targetKeywordsView({
+      ...bundle,
+      query_page: result("query_page", [qp("/works/b", 5)])
+    }, EMPTY_TITLES).rows[0].landing);
+  });
+
+  it("행 증감은 두 회차 모두 확인한 AI 끼리", () => {
+    const view = answerView({
+      rounds: [],
+      latest: "2026-11-17",
+      previous: "2026-11-10",
+      total: { mentioned: 2, checked: 2, previous: null, diff_pp: null, diff_count: null },
+      services: [],
+      grid: [
+        {
+          question_id: 1,
+          question: "q",
+          group: "A",
+          cells: {
+            chatgpt: { mentioned: true, previous: true, changed: false },
+            claude: { mentioned: true, previous: null, changed: false }
+          },
+          changed: false
+        }
+      ],
+      cited_top: [],
+      wrong_facts: []
+    });
+    assert.equal(view?.rows[0].diff, 0);
+    assert.equal(view?.questionsMentionedComparable, 1);
+  });
+});

@@ -24,15 +24,19 @@ function statsActionBody(text: string, method: string, actorName: string | null)
   }
 }
 
-/** 목표 키워드를 고친 사람도 브라우저 값 대신 로그인 사용자 이름으로 채운다 */
-function targetKeywordBody(text: string, actorName: string | null): string | undefined {
-  if (!text) return undefined;
+/**
+ * 목표 키워드를 고친 사람도 브라우저 값 대신 로그인 사용자 이름으로 채운다.
+ * JSON 객체가 아니면 null (프록시가 400 으로 돌려준다).
+ */
+function targetKeywordBody(text: string, actorName: string | null): string | null {
   try {
-    const json = JSON.parse(text) as Record<string, unknown>;
-    json.updated_by = actorName?.trim() || null;
-    return JSON.stringify(json);
+    const json = JSON.parse(text) as unknown;
+    if (!json || typeof json !== "object" || Array.isArray(json)) return null;
+    const record = json as Record<string, unknown>;
+    record.updated_by = actorName?.trim() || null;
+    return JSON.stringify(record);
   } catch {
-    return text;
+    return null;
   }
 }
 
@@ -64,7 +68,18 @@ async function proxy(request: NextRequest, ctx: Ctx, method: string) {
   const init: RequestInit = { method, headers };
 
   try {
-    if (method !== "GET" && method !== "HEAD") {
+    const isTargetKeywords = joined === "stats/target-keywords" || joined.startsWith("stats/target-keywords/");
+    if (isTargetKeywords && method !== "GET" && method !== "HEAD") {
+      // 목표 키워드 쓰기는 JSON 객체만 받는다(multipart 로 updated_by 덮어쓰기를 우회하지 못하게)
+      const body = targetKeywordBody(await request.text(), actor.name);
+      if (body === null) {
+        return NextResponse.json({ error: "invalid_json" }, { status: 400 });
+      }
+      init.body = body;
+      const jsonHeaders = new Headers(init.headers);
+      jsonHeaders.set("Content-Type", "application/json");
+      init.headers = jsonHeaders;
+    } else if (method !== "GET" && method !== "HEAD") {
       if (contentType.includes("multipart/form-data")) {
         const expected = Number(request.headers.get("content-length") || 0);
         const raw = await request.arrayBuffer();
@@ -90,8 +105,6 @@ async function proxy(request: NextRequest, ctx: Ctx, method: string) {
         const text = await request.text();
         if (joined === "stats/actions" || joined.startsWith("stats/actions/")) {
           init.body = statsActionBody(text, method, actor.name);
-        } else if (joined === "stats/target-keywords" || joined.startsWith("stats/target-keywords/")) {
-          init.body = targetKeywordBody(text, actor.name);
         } else if (text) {
           if (method === "POST" && joined === "publish") {
             try {

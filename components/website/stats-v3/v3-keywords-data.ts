@@ -8,7 +8,7 @@
 
 import { pageTitleFromPath, type TitleMap } from "@/components/website/stats/content-data";
 import { makeCountDelta, pickRows, previousIsOldSite, type DeltaView } from "@/components/website/stats/stats-data";
-import { SEARCH_SOURCES, type When } from "@/components/website/stats-v3/v3-data";
+import { normalizePath, SEARCH_SOURCES, type When } from "@/components/website/stats-v3/v3-data";
 import type { StatsBundle, StatsPoint, TargetKeywordsPayload } from "@/lib/website/stats";
 
 /** 비교용: NFKC · 소문자 · 공백·문장부호·기호 뺌 (홈페이지와 같은 규칙) */
@@ -63,11 +63,14 @@ function dailyImpressions(rows: StatsPoint[], norm: string): Map<string, number>
 function topLanding(rows: StatsPoint[], norm: string): string | null {
   const byPath = new Map<string, { clicks: number; impressions: number }>();
   for (const row of rows) {
-    if (!row.key || !row.key2 || normalizeKeyword(row.key) !== norm) continue;
-    const prev = byPath.get(row.key2) ?? { clicks: 0, impressions: 0 };
+    if (!row.key || normalizeKeyword(row.key) !== norm) continue;
+    // 쿼리 문자열 · 끝 / 가 다른 같은 페이지는 한 경로로 합친다
+    const path = normalizePath(row.key2);
+    if (!path) continue;
+    const prev = byPath.get(path) ?? { clicks: 0, impressions: 0 };
     prev.clicks += row.clicks ?? 0;
     prev.impressions += row.impressions ?? 0;
-    byPath.set(row.key2, prev);
+    byPath.set(path, prev);
   }
   let best: string | null = null;
   let bestScore: [number, number] = [-1, -1];
@@ -93,7 +96,8 @@ export function targetKeywordsView(bundle: StatsBundle | null, titles: TitleMap)
 
   const oldSite = previousIsOldSite(bundle);
   const queryCur = gscRows(bundle, "query", "current");
-  const queryPrev = gscRows(bundle, "query", "previous");
+  // 앞 기간이 옛 사이트면 증감처럼 추이의 점선도 그리지 않는다
+  const queryPrev = oldSite ? [] : gscRows(bundle, "query", "previous");
   const pageCur = gscRows(bundle, "query_page", "current");
   const curDates = datesOf(queryCur);
   const prevDates = datesOf(queryPrev);
