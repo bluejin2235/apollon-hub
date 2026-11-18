@@ -15,6 +15,7 @@ import {
   readBotsPayload,
   readTop,
   visitBars,
+  visitPages,
   visitSummary
 } from "../../components/website/stats-v3/v3-ai-data";
 import { fitLabel, markRoom } from "../../components/website/stats-v3/v3-chart";
@@ -142,6 +143,20 @@ describe("v3 AI ③ 사람이 옴", () => {
     assert.equal(more.length, 5);
     assert.deepEqual([more[4]?.name, more[4]?.value], ["그 밖", 2]);
     assert.equal(more.reduce((acc, bar) => acc + (bar.value ?? 0), 0), 9);
+  });
+
+  it("도착한 콘텐츠의 (not set) 줄은 「들어온 페이지 모름」, 숫자는 그대로", () => {
+    const bundle = bundleOf();
+    const visits = bundle.ai_visits as unknown as { ai_visits: { current: { top_pages: unknown[] } } };
+    visits.ai_visits.current.top_pages.push({ path: "(not set)", lang: "ko", sessions: 1 });
+    const rows = visitPages(readAiVisits(bundle), EMPTY_TITLES);
+    assert.deepEqual(
+      rows.map((row) => [row.title, row.sessions, row.unknown ?? false]),
+      [
+        [rows[0]?.title, 5, false],
+        ["들어온 페이지 모름", 1, true]
+      ]
+    );
   });
 
   it("답 문장은 AI에서 온 방문 숫자로", () => {

@@ -16,7 +16,7 @@ import type { SummaryCardId } from "@/components/website/stats/stats-labels";
 import type { StatsData } from "@/components/website/stats/stats-slot";
 import { axisLabel, LineChart } from "@/components/website/stats-v3/v3-chart";
 import { actionsInRange, chartMarks, markDate, visitsOf } from "@/components/website/stats-v3/v3-data";
-import { overviewAnswer, overviewCards, overviewTrend } from "@/components/website/stats-v3/v3-overview-data";
+import { briefLines, overviewAnswer, overviewCards, overviewTrend } from "@/components/website/stats-v3/v3-overview-data";
 import { Intro, Metric, PrepBadge, StatusLine } from "@/components/website/stats-v3/v3-parts";
 import { dayText, rangeText } from "@/components/website/stats-v3/v3-period";
 import type { V3ScreenProps } from "@/components/website/stats-v3/v3-screens";
@@ -129,7 +129,7 @@ function useSummaryBrief(data: StatsData, from: string, to: string): { state: Br
   return { state, retry: () => setRetryTick((n) => n + 1) };
 }
 
-function LunaAndTasks({ state, onRetry }: { state: BriefState; onRetry: () => void }) {
+export function LunaAndTasks({ state, onRetry }: { state: BriefState; onRetry: () => void }) {
   const todos = state.status === "ready" ? state.data.todos.slice(0, 3) : [];
   return (
     <div className="v3-two">
@@ -138,7 +138,16 @@ function LunaAndTasks({ state, onRetry }: { state: BriefState; onRetry: () => vo
           <h2>루나 요약</h2>
           <span className="v3-tiny">앞 기간과 달라진 점</span>
         </div>
-        {state.status === "ready" ? <p className="v3-summary-text">{state.data.summary}</p> : null}
+        {state.status === "ready" ? (
+          <ul className="v3-summary-lines">
+            {briefLines(state.data.summary).map((line, index) => (
+              <li key={line}>
+                <span className="v3-n">{String(index + 1).padStart(2, "0")}</span>
+                <span>{line}</span>
+              </li>
+            ))}
+          </ul>
+        ) : null}
         {state.status === "loading" ? <p className="v3-tiny">요약을 만드는 중입니다…</p> : null}
         {state.status === "idle" ? <p className="v3-tiny">이 기간에는 읽을 새 홈페이지 숫자가 없습니다.</p> : null}
         {state.status === "error" ? (
@@ -161,6 +170,7 @@ function LunaAndTasks({ state, onRetry }: { state: BriefState; onRetry: () => vo
               <li key={`${item.level}-${item.title}`}>
                 <span className="v3-check" />
                 <span>{item.title}</span>
+                {item.area ? <span className="v3-task-who">{item.area}</span> : null}
               </li>
             ))}
           </ul>

@@ -7,8 +7,8 @@
 
 import { useMemo } from "react";
 
-import { shortDate } from "@/components/website/stats/stats-data";
-import { LineChart } from "@/components/website/stats-v3/v3-chart";
+import { readActualRange } from "@/components/website/stats/stats-data";
+import { axisLabel, LineChart } from "@/components/website/stats-v3/v3-chart";
 import { titlesOf } from "@/components/website/stats-v3/v3-content-data";
 import { DeltaBlock, Intro, LangBadge, List, PrepBadge, StatusLine, Badge } from "@/components/website/stats-v3/v3-parts";
 import { rangeText } from "@/components/website/stats-v3/v3-period";
@@ -93,6 +93,7 @@ export function V3Search({ bundle, status, today, catalog }: V3ScreenProps) {
   const fresh = useMemo(() => newQueries(bundle), [bundle]);
   const landings = useMemo(() => searchLandingTop(bundle, titlesOf(catalog)), [bundle, catalog]);
   const answer = useMemo(() => searchAnswer(bundle), [bundle]);
+  const visitRange = readActualRange(bundle);
 
   return (
     <>
@@ -135,7 +136,7 @@ export function V3Search({ bundle, status, today, catalog }: V3ScreenProps) {
                 <LineChart
                   mini
                   two
-                  labels={series.dates.map(shortDate)}
+                  labels={series.dates.map(axisLabel)}
                   current={series.current}
                   previous={series.previous}
                   format={countTick}
@@ -174,7 +175,9 @@ export function V3Search({ bundle, status, today, catalog }: V3ScreenProps) {
         <div className="v3-card">
           <div className="v3-card-head">
             <h2>검색으로 많이 들어온 콘텐츠</h2>
-            <span className="v3-tiny">방문 기준</span>
+            <span className="v3-tiny">
+              {visitRange ? `${rangeText(visitRange.actualFrom, visitRange.actualTo, year)} ` : ""}방문 기준
+            </span>
           </div>
           <List
             items={landings.map((row) => ({

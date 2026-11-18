@@ -12,8 +12,10 @@
 import {
   aiVisitsSummary,
   buildAiTopContents,
+  buildAiVisitPages,
   countDelta,
   readAiVisits,
+  type AiVisitPageRow,
   type AiVisits,
   type BotsCountPair,
   type BotsStatsPayload
@@ -23,7 +25,7 @@ import { intText, makeCountDelta, type DeltaView } from "@/components/website/st
 import type { HBarRow } from "@/components/website/stats-v3/v3-parts";
 import type { StatsBundle } from "@/lib/website/stats";
 
-export { botsPeriodBeforeSince, buildAiVisitPages, readAiVisits, readBotsPayload } from "@/components/website/stats/ai-data";
+export { botsPeriodBeforeSince, readAiVisits, readBotsPayload } from "@/components/website/stats/ai-data";
 
 const unit = (value: number | null) => (value == null ? null : `${intText(value)}회`);
 
@@ -118,6 +120,13 @@ export function visitBars(visits: AiVisits | null): HBarRow[] {
   const rest = row("그 밖", (n) => !named.has(n));
   if ((rest.value ?? 0) > 0) rows.push(rest);
   return rows;
+}
+
+/** 도착한 콘텐츠 — buildAiVisitPages 그대로. GA 가 들어온 페이지를 못 남긴 줄((not set))만 말로 바꾼다 */
+export function visitPages(visits: AiVisits | null, titles: TitleMap): (AiVisitPageRow & { unknown?: true })[] {
+  return buildAiVisitPages(visits, titles).map((row) =>
+    row.path === "(not set)" ? { ...row, title: "들어온 페이지 모름", unknown: true } : row
+  );
 }
 
 export function visitSummary(bundle: StatsBundle | null) {

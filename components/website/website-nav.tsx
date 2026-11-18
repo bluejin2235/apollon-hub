@@ -15,7 +15,7 @@ import {
   Settings
 } from "lucide-react";
 import { MobileSubNav, type SubNavItem } from "@/components/portal/MobileSubNav";
-import { STATS_SCREENS } from "@/lib/website/stats";
+import { V3_SCREENS } from "@/components/website/stats-v3/v3-screens";
 
 export type WebsiteNavItem = {
   href: string;
@@ -42,7 +42,8 @@ const CAREER_UNREAD = 0;
 /** Let's Talk 안 읽은 문의. 데이터 연결 전 자리만 둔다. */
 const CONTACT_UNREAD = 0;
 
-const STATS_NAV_ITEMS: WebsiteNavItem[] = STATS_SCREENS.map((item) => ({
+/** 옛 통계 화면(/website/stats/...)은 메뉴에서 빼고 주소로만 남긴다 */
+const STATS_NAV_ITEMS: WebsiteNavItem[] = V3_SCREENS.map((item) => ({
   href: item.href,
   label: item.label,
   shortLabel: item.label,
@@ -122,7 +123,7 @@ export const WEBSITE_NAV_GROUPS: WebsiteNavGroup[] = [
   {
     kind: "tree",
     title: "홈페이지 통계",
-    titleHref: "/website/stats/summary",
+    titleHref: "/website/stats-v3/overview",
     match: (p) => p.startsWith("/website/stats"),
     items: STATS_NAV_ITEMS
   },
@@ -183,6 +184,24 @@ function NavLink({
   );
 }
 
+/** 통계 하위 메뉴 — 목업 hub-stats-v3 사이드바 모양 */
+function StatsTreeLink({ item, pathname }: { item: WebsiteNavItem; pathname: string }) {
+  const active = item.match(pathname);
+  return (
+    <Link
+      href={item.href}
+      aria-current={active ? "page" : undefined}
+      className={`rounded-[7px] border px-3 py-[7px] text-[13px] transition ${
+        active
+          ? "border-[#83b6e7] bg-[#eaf4ff] font-bold text-[#2469a3]"
+          : "border-transparent text-[#757a83] hover:bg-slate-200/80 hover:text-slate-900"
+      }`}
+    >
+      {item.label}
+    </Link>
+  );
+}
+
 export function WebsiteSidebarNav({ pathname }: { pathname: string }) {
   return (
     <nav className="mt-8 flex flex-col gap-1">
@@ -192,18 +211,23 @@ export function WebsiteSidebarNav({ pathname }: { pathname: string }) {
             <div className="my-3 border-t border-slate-300" role="separator" />
           ) : null}
           {group.kind === "tree" ? (
-            <div className="flex flex-col gap-0.5">
+            <div className="flex flex-col">
               <Link
                 href={group.titleHref}
-                className={`px-3 py-1.5 text-[13px] font-semibold ${
-                  group.match(pathname) ? "text-slate-800" : "text-slate-500 hover:text-slate-800"
+                className={`flex items-center px-[13px] py-2.5 text-[13px] font-bold ${
+                  group.match(pathname) ? "text-[#16171a]" : "text-slate-600 hover:text-[#16171a]"
                 }`}
               >
-                {group.title}
+                <span className="flex-1">{group.title}</span>
+                <span className="text-[#999]" aria-hidden>
+                  ⌄
+                </span>
               </Link>
-              {group.items.map((item) => (
-                <NavLink key={item.href} item={item} pathname={pathname} nested />
-              ))}
+              <div className="grid gap-1 pl-3">
+                {group.items.map((item) => (
+                  <StatsTreeLink key={item.href} item={item} pathname={pathname} />
+                ))}
+              </div>
             </div>
           ) : (
             <div className="flex flex-col gap-1">

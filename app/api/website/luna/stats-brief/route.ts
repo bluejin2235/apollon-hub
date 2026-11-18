@@ -6,10 +6,14 @@ export const runtime = "nodejs";
 
 const MODEL = "claude-sonnet-4-6";
 
+/** 할 일 영역 — 통계 v3 「이번 주 할 일」 오른쪽 태그 */
+const TODO_AREAS = ["검색", "콘텐츠", "AI", "방문 패턴", "수집 설정"] as const;
+
 export type StatsBriefTodo = {
   level: "high" | "mid" | "low";
   title: string;
   reason: string;
+  area?: (typeof TODO_AREAS)[number];
 };
 
 export type StatsBriefResult = {
@@ -55,9 +59,14 @@ const BRIEF_TOOL: Anthropic.Messages.Tool = {
           properties: {
             level: { type: "string", enum: ["high", "mid", "low"] },
             title: { type: "string" },
-            reason: { type: "string" }
+            reason: { type: "string" },
+            area: {
+              type: "string",
+              enum: [...TODO_AREAS],
+              description: "이 할 일이 속한 통계 화면. 수집 방법을 바꾸는 일은 「수집 설정」"
+            }
           },
-          required: ["level", "title", "reason"]
+          required: ["level", "title", "reason", "area"]
         }
       }
     },
@@ -217,7 +226,8 @@ function parseToolResult(response: Anthropic.Messages.Message): StatsBriefResult
       const title = typeof row.title === "string" ? row.title.trim() : "";
       const reason = typeof row.reason === "string" ? row.reason.trim() : "";
       if (!level || !title || !reason) continue;
-      todos.push({ level, title, reason });
+      const area = TODO_AREAS.find((name) => name === row.area);
+      todos.push(area ? { level, title, reason, area } : { level, title, reason });
     }
   }
   return { summary, todos };

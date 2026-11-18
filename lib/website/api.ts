@@ -1322,6 +1322,8 @@ export type StatsBriefTodo = {
   level: "high" | "mid" | "low";
   title: string;
   reason: string;
+  /** 통계 화면 이름 또는 「수집 설정」. 예전에 만든 요약에는 없다 */
+  area?: string;
 };
 
 export type StatsBriefResult = {

@@ -1,4 +1,4 @@
-/** 통계 v3 다섯 화면 — 주소와 받아 올 자료. 사이드바에는 아직 넣지 않는다(검수 뒤 지금 화면과 바꾼다) */
+/** 통계 v3 다섯 화면 — 주소와 받아 올 자료. 사이드바 「홈페이지 통계」도 이 목록을 쓴다 (옛 /website/stats 는 주소로만 남김) */
 
 import type { StatsActionsState } from "@/components/website/stats/stats-actions";
 import type { LoadStatus } from "@/components/website/stats/stats-slot";

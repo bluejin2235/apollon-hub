@@ -8,8 +8,7 @@
 import { useMemo } from "react";
 
 import { titlesOf } from "@/components/website/stats-v3/v3-content-data";
-import { shortDate } from "@/components/website/stats/stats-data";
-import { LineChart } from "@/components/website/stats-v3/v3-chart";
+import { axisLabel, LineChart } from "@/components/website/stats-v3/v3-chart";
 import { durationText } from "@/components/website/stats-v3/v3-data";
 import {
   DeltaBlock,
@@ -118,7 +117,7 @@ function MiniStat({
       {trend.dates.length > 1 ? (
         <LineChart
           mini
-          labels={trend.dates.map(shortDate)}
+          labels={trend.dates.map(axisLabel)}
           current={trend.current}
           previous={trend.previous}
           format={format}

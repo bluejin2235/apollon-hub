@@ -161,7 +161,8 @@ export function LineChart({ labels, current, previous, mini, two, marks = [], fo
             key={i}
             x={xOf(i)}
             y={h - 9}
-            textAnchor={count <= 1 ? "middle" : k === 0 ? "start" : k === ticks.length - 1 ? "end" : "middle"}
+            // 작은 그래프는 「11월 11일」이 이웃 글자와 겹치지 않게 양 끝도 가운데 맞춤
+            textAnchor={mini || count <= 1 ? "middle" : k === 0 ? "start" : k === ticks.length - 1 ? "end" : "middle"}
           >
             {labels[i]}
           </text>

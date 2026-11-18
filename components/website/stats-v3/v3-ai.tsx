@@ -12,12 +12,12 @@ import {
   answerColumns,
   botsDelta,
   botsPeriodBeforeSince,
-  buildAiVisitPages,
   readAiVisits,
   readBars,
   readBotsPayload,
   readTop,
   visitBars,
+  visitPages,
   visitSummary
 } from "@/components/website/stats-v3/v3-ai-data";
 import { titlesOf } from "@/components/website/stats-v3/v3-content-data";
@@ -143,7 +143,7 @@ function VisitCard({ bundle, status, catalog }: Pick<V3ScreenProps, "bundle" | "
   const visits = useMemo(() => readAiVisits(bundle), [bundle]);
   const summary = useMemo(() => visitSummary(bundle), [bundle]);
   const bars = useMemo(() => visitBars(visits), [visits]);
-  const pages = useMemo(() => buildAiVisitPages(visits, titlesOf(catalog)), [visits, catalog]);
+  const pages = useMemo(() => visitPages(visits, titlesOf(catalog)), [visits, catalog]);
 
   return (
     <div className="v3-card">
@@ -171,7 +171,7 @@ function VisitCard({ bundle, status, catalog }: Pick<V3ScreenProps, "bundle" | "
               key: row.path,
               name: (
                 <>
-                  {row.title} <Lang label={row.langLabel} />
+                  {row.title} {row.unknown ? null : <Lang label={row.langLabel} />}
                 </>
               ),
               value: `${row.sessions.toLocaleString("ko-KR")}회`,

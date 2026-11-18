@@ -80,3 +80,11 @@ export function overviewAnswer(bundle: StatsBundle | null): { lead: string; em: 
   }
   return { lead, em };
 }
+
+/** 루나 요약 문단 → 목업의 번호 붙은 줄. 문장 끝(. ! ?) 뒤 빈칸에서만 자른다(「2.3개」 같은 소수는 그대로) */
+export function briefLines(summary: string): string[] {
+  return summary
+    .split(/(?<=[.!?])\s+/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+}

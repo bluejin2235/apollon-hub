@@ -3,7 +3,7 @@ import { describe, it } from "node:test";
 
 import "./stats-env";
 
-import { overviewAnswer, overviewCards, overviewTrend } from "../../components/website/stats-v3/v3-overview-data";
+import { briefLines, overviewAnswer, overviewCards, overviewTrend } from "../../components/website/stats-v3/v3-overview-data";
 import type { StatsBundle, StatsPoint } from "../../lib/website/stats";
 
 function ga(kind: string, date: string, extra: Partial<StatsPoint>): StatsPoint {
@@ -82,5 +82,15 @@ describe("v3 요약 카드 · 추이", () => {
       current: [50, 40],
       previous: [30, 35]
     });
+  });
+});
+
+describe("v3 루나 요약 줄", () => {
+  it("문장마다 한 줄, 소수점은 자르지 않는다", () => {
+    assert.deepEqual(briefLines("방문자는 174명이었어요. 한 번에 2.3개를 봤어요!  검색은 아직 적어요."), [
+      "방문자는 174명이었어요.",
+      "한 번에 2.3개를 봤어요!",
+      "검색은 아직 적어요."
+    ]);
   });
 });

@@ -7,8 +7,7 @@
 
 import { Fragment, useMemo, useState } from "react";
 
-import { shortDate } from "@/components/website/stats/stats-data";
-import { LineChart } from "@/components/website/stats-v3/v3-chart";
+import { axisLabel, LineChart } from "@/components/website/stats-v3/v3-chart";
 import {
   contentAnswer,
   contentCards,
@@ -89,7 +88,7 @@ function Detail({ row, bundle, year }: { row: ContentRow; bundle: StatsBundle | 
             {many ? (
               <LineChart
                 mini
-                labels={series.dates.map(shortDate)}
+                labels={series.dates.map(axisLabel)}
                 current={series.current}
                 previous={series.previous}
                 ariaLabel={`${row.title} 조회 이번 기간과 앞 기간 추이`}

@@ -47,12 +47,12 @@
   box-sizing: border-box;
 }
 
-.v3 button,
-.v3 input {
+/* 글자 · 단추 · 표 기본값은 :where 로 감싸 목업처럼 클래스 규칙이 이기게 한다 */
+.v3 :where(button, input) {
   font: inherit;
 }
 
-.v3 button {
+.v3 :where(button) {
   cursor: pointer;
   color: inherit;
 }
@@ -64,37 +64,34 @@
   outline-offset: 3px;
 }
 
-.v3 h1,
-.v3 h2,
-.v3 h3,
-.v3 p {
+.v3 :where(h1, h2, h3, p) {
   margin: 0;
 }
 
-.v3 h1 {
+.v3 :where(h1) {
   font-size: 23px;
   font-weight: 700;
   letter-spacing: -0.8px;
 }
 
-.v3 h2 {
+.v3 :where(h2) {
   font-size: 15px;
   font-weight: 700;
   letter-spacing: -0.3px;
 }
 
-.v3 h3 {
+.v3 :where(h3) {
   font-size: 12px;
   font-weight: 700;
 }
 
-.v3 svg {
+.v3 :where(svg) {
   display: block;
   width: 100%;
   overflow: visible;
 }
 
-.v3 svg text {
+.v3 :where(svg text) {
   font-size: 11px;
   fill: var(--muted);
 }
@@ -424,11 +421,7 @@
   border-color: #e1eae5;
 }
 
-.v3-summary-text {
-  font-size: 13px;
-  line-height: 1.75;
-}
-
+.v3-summary-lines,
 .v3-tasks {
   list-style: none;
   margin: 0;
@@ -437,9 +430,23 @@
   gap: 10px;
 }
 
+.v3-summary-lines li,
 .v3-tasks li {
   display: flex;
   gap: 10px;
+}
+
+.v3-n {
+  color: #8c9c93;
+  font-size: 11px;
+  padding-top: 2px;
+}
+
+.v3-task-who {
+  font-size: 10px;
+  color: #8a9098;
+  margin-left: auto;
+  white-space: nowrap;
 }
 
 .v3-check {
@@ -566,13 +573,13 @@
   max-width: 100%;
 }
 
-.v3 table {
+.v3 :where(table) {
   width: 100%;
   border-collapse: collapse;
   font-size: 12px;
 }
 
-.v3 th {
+.v3 :where(th) {
   text-align: left;
   font-weight: 500;
   color: #858a93;
@@ -583,13 +590,13 @@
   background: #fafbfc;
 }
 
-.v3 td {
+.v3 :where(td) {
   padding: 12px 9px;
   border-bottom: 1px solid #edf0f3;
   vertical-align: middle;
 }
 
-.v3 tbody tr:last-child td {
+.v3 :where(tbody tr:last-child td) {
   border-bottom: 0;
 }
 
@@ -953,20 +960,24 @@
   color: #9da6ac;
 }
 
-.v3-heat-1 {
+.v3 .v3-heat-1 {
   background: #e1ebed;
+  color: #6a8086;
 }
 
-.v3-heat-2 {
+.v3 .v3-heat-2 {
   background: #c1d7dc;
+  color: #42616a;
 }
 
-.v3-heat-3 {
+.v3 .v3-heat-3 {
   background: #8eb7c2;
+  color: #274b58;
 }
 
-.v3-heat-4 {
+.v3 .v3-heat-4 {
   background: #568a9c;
+  color: #fff;
 }
 
 .v3-heat-legend {
@@ -995,7 +1006,7 @@
 
 .v3-mini-stats {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1fr;
   gap: 14px;
   margin-top: 20px;
   border-top: 1px solid var(--line);
@@ -1004,7 +1015,7 @@
 
 .v3-mini-stat {
   display: grid;
-  grid-template-columns: 1fr 1.2fr;
+  grid-template-columns: 200px 1fr;
   gap: 12px;
   align-items: center;
 }
@@ -1013,9 +1024,8 @@
   font-size: 25px;
 }
 
-/* 허브 본문은 목업보다 좁아 작은 그래프가 반쯤으로 줄어든다 — 눈금 글자를 키워 읽히게 */
 .v3 .v3-mini-stat svg text {
-  font-size: 20px;
+  font-size: 13px;
 }
 
 .v3-conversion {
