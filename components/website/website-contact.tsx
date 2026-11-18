@@ -754,9 +754,9 @@ function InboxTab() {
           void getInquiry(openId).then(
             (detail) => {
               if (!detail.ok || openIdRef.current !== openId) return;
-              setSelected((current) =>
-                current && current.id === openId ? mergeInquiry(current, applyMode(current, detail.data, "status")) : current
-              );
+              // 메모도 받은 값으로(쓰던 글은 메모 칸이 지키고, 옛 메모로 저장하면 서버가 거절한다). 첫 조회가 실패했어도 이제 메모를 열 수 있다(코덱스 24차)
+              setSelected((current) => (current && current.id === openId ? mergeInquiry(current, detail.data) : current));
+              setDetailState({ id: openId, state: "ready" });
             },
             () => undefined
           );
