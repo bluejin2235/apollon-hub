@@ -748,6 +748,19 @@ function InboxTab() {
           const row = list.items.find((item) => item.id === current.id);
           return row ? mergeInquiry(current, row) : current;
         });
+        // 열린 문의가 지금 조건의 목록에서 빠졌으면(남이 처리 상태를 바꾼 경우 등) 상세를 다시 받아 상태를 맞춘다(코덱스 23차)
+        const openId = openIdRef.current;
+        if (openId && !list.items.some((item) => item.id === openId)) {
+          void getInquiry(openId).then(
+            (detail) => {
+              if (!detail.ok || openIdRef.current !== openId) return;
+              setSelected((current) =>
+                current && current.id === openId ? mergeInquiry(current, applyMode(current, detail.data, "status")) : current
+              );
+            },
+            () => undefined
+          );
+        }
         return;
       }
       showToast({ message: "문의를 불러오지 못했습니다", tone: "error" });
