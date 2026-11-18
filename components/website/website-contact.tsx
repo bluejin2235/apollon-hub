@@ -60,6 +60,16 @@ const STATUS_BADGE: Record<InquiryStatus, string> = {
   done: "bg-slate-100 text-slate-600 ring-slate-200"
 };
 
+/** 응답이 바꾸는 칸: all = 상세 조회, status = 읽음 · 처리 상태(메모는 그대로), memo = 메모 저장(메모만) */
+type ApplyMode = "all" | "status" | "memo";
+
+/** 응답 종류에 맞는 칸만 지금 값에 덮는다 (늦게 온 응답이 다른 칸을 옛 값으로 되돌리지 않게) */
+function applyMode(current: InquiryItem, row: InquiryItem, mode: ApplyMode): InquiryItem {
+  if (mode === "memo") return { ...current, memo: row.memo };
+  if (mode === "status") return { ...row, memo: current.memo };
+  return row;
+}
+
 /** 목록 · 수정 응답에 없는 상세 값(제목 · 구역 · 본문)은 앞의 값을 지킨다 */
 function mergeInquiry(prev: InquiryItem | null, next: InquiryItem): InquiryItem {
   if (!prev || prev.id !== next.id) return next;
@@ -321,7 +331,7 @@ function MemoBox({
   membersState: LoadState;
   /** 상세에서 저장 메모를 받았는지 */
   ready: DetailState;
-  onSaved: (row: InquiryItem) => void;
+  onSaved: (row: InquiryItem, mode: ApplyMode) => void;
 }) {
   const saved = item.memo ?? "";
   const [memo, setMemo] = useState(saved);
@@ -420,7 +430,7 @@ function MemoBox({
       const latest = result.details && typeof result.details === "object" ? (result.details as InquiryItem) : null;
       if (latest && latest.id === item.id) {
         // 메모만 바꾼다. 응답 속 처리 상태 · 읽음은 옛 값일 수 있어 지금 화면 값을 지킨다(코덱스 20차)
-        onSaved({ ...item, memo: latest.memo });
+        onSaved(latest, "memo");
         setBase(latest.memo ?? "");
         setConflict(latest.memo ?? "");
       }
@@ -446,7 +456,7 @@ function MemoBox({
     }
     setPicked([]);
     setConflict(null);
-    onSaved(result.data.item);
+    onSaved(result.data.item, "memo");
     const { message, tone } = mentionSaveMessage(result.data);
     const long = (result.data.deliveries ?? []).length > 0 || (result.data.ambiguous ?? []).length > 0;
     showToast({ message, tone, durationMs: long ? 8000 : undefined });
@@ -556,7 +566,7 @@ function InquiryDetail({
   members: MentionMember[];
   membersState: LoadState;
   memoReady: DetailState;
-  onChanged: (row: InquiryItem, keepMemo?: boolean) => void;
+  onChanged: (row: InquiryItem, mode: ApplyMode) => void;
   onClose: () => void;
 }) {
   const [saving, setSaving] = useState(false);
@@ -574,7 +584,7 @@ function InquiryDetail({
       showToast({ message: "상태를 바꾸지 못했습니다", tone: "error" });
       return;
     }
-    onChanged(result.data, true);
+    onChanged(result.data, "status");
     showToast({ message: done ? "처리 완료로 옮겼습니다" : "미처리로 되돌렸습니다", tone: "ok" });
   }
 
@@ -774,11 +784,11 @@ function InboxTab() {
   const openAbortRef = useRef<AbortController | null>(null);
 
   /** 열린 문의와 같은 id 일 때만 상세를 바꾼다 */
-  const applyIfOpen = useCallback((row: InquiryItem, keepMemo = false) => {
+  const applyIfOpen = useCallback((row: InquiryItem, mode: ApplyMode = "all") => {
     if (openIdRef.current !== row.id) return;
     // 읽음 · 처리 상태 응답은 메모를 바꾸지 않는다(늦게 온 옛 메모가 방금 저장한 메모를 덮지 않게, 코덱스 18차)
     setSelected((current) =>
-      current && current.id === row.id ? mergeInquiry(current, keepMemo ? { ...row, memo: current.memo } : row) : row
+      current && current.id === row.id ? mergeInquiry(current, applyMode(current, row, mode)) : row
     );
   }, []);
 
@@ -809,9 +819,12 @@ function InboxTab() {
       if (row.is_read) return;
       const marked = await updateInquiry(id, { is_read: true }, controller.signal);
       if (!isCurrent() || !marked.ok) return;
-      applyIfOpen(marked.data, true);
+      applyIfOpen(marked.data, "status");
       // 읽음 저장이 됐으면 목록의 읽음 표시 · 안 읽은 수를 바로 바꾼다. 아래 새로 고침이 실패해도 옛 표시로 남지 않게
-      setData((list) => applyInquiryToList(list, marked.data));
+      setData((list) => {
+        const before = list?.items.find((one) => one.id === id);
+        return before ? applyInquiryToList(list, applyMode(before, marked.data, "status")) : list;
+      });
       await load();
     },
     [load, applyIfOpen]
@@ -903,9 +916,12 @@ function InboxTab() {
               members={members}
               membersState={membersState}
               memoReady={detailState?.id === selected.id ? detailState.state : "ready"}
-              onChanged={(row, keepMemo) => {
-                applyIfOpen(row, keepMemo);
-                setData((list) => applyInquiryToList(list, row));
+              onChanged={(row, mode) => {
+                applyIfOpen(row, mode);
+                setData((list) => {
+                  const before = list?.items.find((one) => one.id === row.id);
+                  return before ? applyInquiryToList(list, applyMode(before, row, mode)) : list;
+                });
                 void load();
               }}
               onClose={closeDetail}
