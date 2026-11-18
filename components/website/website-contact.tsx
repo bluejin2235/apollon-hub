@@ -328,13 +328,16 @@ function MemoBox({
   // 목록 행으로 먼저 열면 저장 메모가 상세로 늦게 온다. 받기 전에는 칸과 저장을 잠그고, 받으면 저장 메모로 채운다
   // (빈 칸이나 옛 값을 보고 기존 메모를 덮어쓰지 않게, 코덱스 12·13차)
   // 처음 받은 순간 한 번만, 그리는 도중에 채운다(잠금이 풀린 화면이 빈 칸으로 먼저 보이지 않게, 코덱스 14차).
-  // 같은 문의를 다시 눌러도 쓰던 글은 그대로 둔다.
+  // 같은 문의를 다시 눌러도 쓰던 글은 그대로 둔다. 고치지 않았으면 새로 받은 저장본으로 맞춘다(남이 저장한 메모를 옛 값으로 덮지 않게, 코덱스 15차)
   const [filled, setFilled] = useState(ready === "ready");
-  if (ready === "ready" && !filled) {
-    setFilled(true);
+  const [edited, setEdited] = useState(false);
+  if (ready === "ready" && (!filled || (!edited && memo !== saved))) {
+    if (!filled) setFilled(true);
     setMemo(saved);
   }
   const isReady = ready === "ready" && filled;
+  const memoRef = useRef(memo);
+  memoRef.current = memo;
   const [saving, setSaving] = useState(false);
   const [query, setQuery] = useState<string | null>(null);
   const [active, setActive] = useState(0);
@@ -370,6 +373,7 @@ function MemoBox({
     const caret = el?.selectionStart ?? memo.length;
     const head = memo.slice(0, caret).replace(/@([^\s@]*)$/, `@${member.name} `);
     const next = `${head}${memo.slice(caret)}`.slice(0, MEMO_MAX);
+    setEdited(true);
     setMemo(next);
     setPicked((ids) => (ids.includes(member.id) ? ids : [...ids, member.id]));
     setQuery(null);
@@ -402,7 +406,8 @@ function MemoBox({
 
   async function save() {
     setSaving(true);
-    const result = await saveInquiryMemo(item.id, memo, picked);
+    const sent = memo;
+    const result = await saveInquiryMemo(item.id, sent, picked);
     setSaving(false);
     if (!result.ok) {
       showToast({
@@ -416,6 +421,8 @@ function MemoBox({
       return;
     }
     setPicked([]);
+    // 저장하는 동안 더 쓴 글이 있으면 고친 상태로 둔다
+    if (memoRef.current === sent) setEdited(false);
     onSaved(result.data.item);
     const { message, tone } = mentionSaveMessage(result.data);
     const long = (result.data.deliveries ?? []).length > 0 || (result.data.ambiguous ?? []).length > 0;
@@ -443,6 +450,7 @@ function MemoBox({
           disabled={!isReady}
           maxLength={MEMO_MAX}
           onChange={(event) => {
+            setEdited(true);
             setMemo(event.target.value);
             syncPicker(event.target.value, event.target.selectionStart ?? event.target.value.length);
           }}
