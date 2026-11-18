@@ -273,7 +273,18 @@ function SearchTrends({ bundle, today }: { bundle: StatsBundle | null; today: st
 }
 
 /** 목표 키워드 표 — 순위·노출·클릭은 홈페이지가 계산한 target_keywords, 추이·들어온 페이지는 검색어 행 */
-function TargetKeywords({ view, status, lag }: { view: TargetKeywordsView; status: V3ScreenProps["status"]; lag: string }) {
+function TargetKeywords({
+  view,
+  status,
+  fresh,
+  lag
+}: {
+  view: TargetKeywordsView;
+  status: V3ScreenProps["status"];
+  /** 옛 기간 응답이면 견준 날 수 글을 그리지 않는다 */
+  fresh: boolean;
+  lag: string;
+}) {
   const payload = view.payload;
   const ko = view.rows.filter((row) => row.lang === "ko").length;
   const en = view.rows.length - ko;
@@ -289,7 +300,7 @@ function TargetKeywords({ view, status, lag }: { view: TargetKeywordsView; statu
           </p>
           <p className="v3-tiny">
             {lag}
-            {view.compareNote ? ` · ${view.compareNote}` : ""}
+            {fresh && view.compareNote ? ` · ${view.compareNote}` : ""}
           </p>
         </div>
         <Link className="v3-tiny" href="/website/stats/keywords">
@@ -356,7 +367,7 @@ function TargetKeywords({ view, status, lag }: { view: TargetKeywordsView; statu
   );
 }
 
-export function V3Search({ bundle, status, today, catalog }: V3ScreenProps) {
+export function V3Search({ bundle, status, fresh: bundleFresh, today, catalog }: V3ScreenProps) {
   const year = Number(today.slice(0, 4));
   const groups = useMemo(() => searchGroups(bundle), [bundle]);
   const range = useMemo(() => searchRange(bundle), [bundle]);
@@ -389,7 +400,7 @@ export function V3Search({ bundle, status, today, catalog }: V3ScreenProps) {
       <div className="v3-card">
         <div className="v3-card-head">
           <h2>어떤 말로 찾아오나요?</h2>
-          {range ? <span className="v3-tiny">{compareText(range, year)}</span> : null}
+          {bundleFresh && range ? <span className="v3-tiny">{compareText(range, year)}</span> : null}
         </div>
         <p className="v3-head-help">
           <b>보인 횟수</b>: 구글 검색 결과에 우리 사이트가 나온 횟수 · <b>눌린 횟수</b>: 그걸 보고 누른 횟수 · {lag}
@@ -432,13 +443,13 @@ export function V3Search({ bundle, status, today, catalog }: V3ScreenProps) {
           </div>
         )}
       </div>
-      <TargetKeywords view={keywords} status={status} lag={lag} />
+      <TargetKeywords view={keywords} status={status} fresh={bundleFresh} lag={lag} />
       <div className="v3-two">
         <div className="v3-card">
           <div className="v3-card-head">
             <h2>새로 보인 검색어</h2>
             <span className="v3-tiny">
-              목표 키워드 밖에서 처음 보인 말{fresh != null && range ? ` · 같은 자리 앞 기간 날에도 자료가 있는 ${range.days}일만 봄` : ""}
+              목표 키워드 밖에서 처음 보인 말{bundleFresh && fresh != null && range ? ` · 같은 자리 앞 기간 날에도 자료가 있는 ${range.days}일만 봄` : ""}
             </span>
           </div>
           {fresh == null ? (

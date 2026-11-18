@@ -54,7 +54,7 @@ export type TargetKeywordsView = {
   rows: TargetKeywordView[];
   /** query_page 행이 하나라도 있나 — 없으면 「들어온 페이지」 열에 「준비 중」 */
   hasLanding: boolean;
-  /** 증감에 실제로 견준 날 수(두 기간 모두 검색어 자료가 있는 날 짝). 짝이 없거나 옛 사이트면 null */
+  /** 증감에 실제로 견준 날 수(두 기간 모두 검색어 자료가 있는 날 짝 수). 0 일 수 있다. 옛 사이트면 null */
   comparedDays: number | null;
   /** 표 위 작은 글: 증감을 몇 날끼리 견줬는지. 앞 기간이 옛 사이트면 null(칸마다 「비교 불가」) */
   compareNote: string | null;
@@ -117,7 +117,9 @@ export function targetKeywordsView(bundle: StatsBundle | null, titles: TitleMap)
   const prevDate = prevDateOf(bundle);
   // 증감은 두 기간 모두 검색어 자료가 있는 날 짝만 더해 견준다(검색 화면 위 숫자와 같은 규칙)
   const cover = oldSite ? null : queryCoverage(bundle);
-  const paired = cover && cover.prevDates.length > 0 ? trimQueriesToCoverage(bundle) : null;
+  // 실제 짝 수는 견줄 수 있는지와 따로 센다. 짝이 없으면 queryCoverage 의 days 는 이번 기간 날 수라서 쓰면 안 된다
+  const pairCount = cover ? cover.prevDates.length : 0;
+  const paired = pairCount > 0 ? trimQueriesToCoverage(bundle) : null;
   const pairedCur = paired ? gscRows(paired, "query", "current") : [];
   const pairedPrev = paired ? gscRows(paired, "query", "previous") : [];
   const sumOf = (rows: StatsPoint[], norm: string) => {
@@ -165,7 +167,8 @@ export function targetKeywordsView(bundle: StatsBundle | null, titles: TitleMap)
     };
   });
 
-  const comparedDays = paired && cover ? cover.days : null;
+  // 옛 사이트가 아니면 0일이어도 보인다(0이면 칸마다 「—」)
+  const comparedDays = oldSite ? null : pairCount;
   return {
     payload,
     rows,
@@ -173,8 +176,8 @@ export function targetKeywordsView(bundle: StatsBundle | null, titles: TitleMap)
     comparedDays,
     compareNote: oldSite
       ? null
-      : comparedDays != null
+      : comparedDays && comparedDays > 0
         ? `앞 기간보다는 두 기간 모두 검색어 자료가 있는 ${comparedDays}일끼리 견줌`
-        : "두 기간 모두 검색어 자료가 있는 날이 없어 앞 기간보다는 「—」"
+        : "두 기간 모두 검색어 자료가 있는 날이 0일이라 앞 기간보다는 「—」"
   };
 }

@@ -362,7 +362,7 @@ export function V3Shell({ screen }: { screen: V3ScreenId }) {
       }
     >
       {Screen ? (
-        <Screen bundle={bundle} status={status} from={from} to={to} today={today} catalog={catalog} actions={actions} extras={extras} />
+        <Screen bundle={bundle} status={status} fresh={bundleFresh} from={from} to={to} today={today} catalog={catalog} actions={actions} extras={extras} />
       ) : null}
     </V3Frame>
   );

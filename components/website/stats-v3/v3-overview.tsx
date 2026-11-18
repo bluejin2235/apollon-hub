@@ -296,7 +296,7 @@ function Records({ bundle, actions, from, to, today }: Pick<V3ScreenProps, "bund
 }
 
 export function V3Overview(props: V3ScreenProps) {
-  const { bundle, status, from, to } = props;
+  const { bundle, status, fresh, from, to } = props;
   const cards = useMemo(() => overviewCards(bundle), [bundle]);
   const answer = useMemo(() => overviewAnswer(bundle), [bundle]);
   const brief = useSummaryBrief({ bundle, status }, from, to);
@@ -327,7 +327,7 @@ export function V3Overview(props: V3ScreenProps) {
               value={card?.value ?? null}
               unit={spec.unit}
               delta={card?.delta}
-              hint={card?.hint ?? undefined}
+              hint={fresh ? (card?.hint ?? undefined) : undefined}
               prep={status === "ready" && !card}
             />
           );

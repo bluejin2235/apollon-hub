@@ -45,6 +45,8 @@ export type AiDayBucket = AiDayRange & {
   botsTotal: number | null;
   /** AI 서비스에서 온 방문. 응답이 없으면 null */
   visits: number | null;
+  /** 응답이 알려 준 로봇 기록 시작일. 응답에 로봇 칸이나 시작일이 없으면 null(확인 안 됨) */
+  botsSince: string | null;
 };
 
 export type V3AiDays = {
@@ -105,11 +107,18 @@ export function prevSlotsFrom(
   });
 }
 
-/** 로봇 그래프 점의 앞 기간 까닭: 받은 칸이 로봇 기록 시작 전이면 「로봇 기록 시작 전」 */
+/**
+ * 로봇 그래프 점의 앞 기간 까닭.
+ * 「로봇 기록 시작 전」은 응답이 확인해 준 시작일(botsSince)보다 칸 끝이 앞설 때만 쓴다.
+ * 응답은 왔는데 로봇 칸이 없거나 시작일을 모르면 「자료 없음」.
+ */
 export function botPrevReason(slot: AiPrevSlot | null | undefined): string | null {
   if (!slot) return PREV_REASON.loading;
   if (slot.reason) return slot.reason;
-  return slot.bucket?.botsByCompany ? null : PREV_REASON.botsBefore;
+  const bucket = slot.bucket;
+  if (bucket?.botsByCompany) return null;
+  if (bucket?.botsSince && bucket.to < bucket.botsSince) return PREV_REASON.botsBefore;
+  return PREV_REASON.noData;
 }
 
 /** 방문 그래프 점의 앞 기간 까닭 */
@@ -161,6 +170,7 @@ export function aiDayBucket(range: AiDayRange, bundle: StatsBundle | null): AiDa
     botDays,
     botsByCompany: bots && !beforeSince ? byCompany : null,
     botsTotal: bots && !beforeSince ? (typeof bots.ai.total?.current === "number" ? bots.ai.total.current : 0) : null,
-    visits: typeof visits?.total === "number" ? visits.total : null
+    visits: typeof visits?.total === "number" ? visits.total : null,
+    botsSince: since
   };
 }

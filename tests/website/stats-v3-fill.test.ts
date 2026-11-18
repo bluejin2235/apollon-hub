@@ -263,7 +263,8 @@ describe("코덱스 지적 반영", () => {
     const view = targetKeywordsView(bundle, EMPTY_TITLES);
     // 검색어 행(query)이 없어 두 기간 짝도 없다. 증감은 「—」(nopair)
     assert.equal(view.rows[0].change.type, "nopair");
-    assert.equal(view.comparedDays, null);
+    assert.equal(view.comparedDays, 0);
+    assert.match(view.compareNote ?? "", /0일/);
     assert.ok(view.rows[0].landing);
     assert.notEqual(view.rows[0].landing, targetKeywordsView({
       ...bundle,
@@ -290,6 +291,16 @@ describe("코덱스 지적 반영", () => {
       query: result("query", [q("2026-11-17", 4)], [other("2026-11-15")])
     } as StatsBundle;
     assert.equal(targetKeywordsView(fresh, EMPTY_TITLES).rows[0].change.type, "new");
+
+    // 두 기간 모두 검색어 자료는 있지만 같은 자리 짝이 0개(11월 17일 ↔ 11월 15일, 앞 기간은 11월 16일만)
+    // 이번 기간 자료 날 수(1)를 견준 날로 잘못 쓰지 않고 0일 · 「—」
+    const noPair = {
+      ...bundle,
+      query: result("query", [q("2026-11-17", 4)], [q("2026-11-16", 2)])
+    } as StatsBundle;
+    const noPairView = targetKeywordsView(noPair, EMPTY_TITLES);
+    assert.equal(noPairView.comparedDays, 0);
+    assert.equal(noPairView.rows[0].change.type, "nopair");
   });
 
   it("행 증감은 두 회차 모두 확인한 AI 끼리", () => {

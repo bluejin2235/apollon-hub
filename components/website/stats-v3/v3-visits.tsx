@@ -219,7 +219,7 @@ function barsMax(rows: HBarRow[], total: number | null): number {
   return Math.max(1, total ?? 0, ...rows.map((row) => row.value ?? 0));
 }
 
-export function V3Visits({ bundle, status, today, catalog }: V3ScreenProps) {
+export function V3Visits({ bundle, status, fresh, today, catalog }: V3ScreenProps) {
   const year = Number(today.slice(0, 4));
   const cards = useMemo(() => visitCards(bundle), [bundle]);
   const card = (id: string) => cards.find((item) => item.id === id);
@@ -261,7 +261,7 @@ export function V3Visits({ bundle, status, today, catalog }: V3ScreenProps) {
             value={item.value}
             unit={item.unit}
             delta={item.delta}
-            hint={item.hint ?? undefined}
+            hint={fresh ? (item.hint ?? undefined) : undefined}
           />
         ))}
       </div>

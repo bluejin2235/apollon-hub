@@ -23,6 +23,11 @@ export const EMPTY_EXTRAS: V3Extras = {
 export type V3ScreenProps = {
   bundle: StatsBundle | null;
   status: LoadStatus;
+  /**
+   * 지금 고른 기간의 응답이 다 왔나(status === "ready" 이고 응답 기간 열쇠가 지금 고른 기간과 같음).
+   * 기간을 바꾼 뒤 새 응답이 오기 전에는 false. 이때 옛 응답에 딸린 알림 · 견준 날 수 글은 그리지 않는다
+   */
+  fresh: boolean;
   from: string;
   to: string;
   today: string;

@@ -549,6 +549,17 @@ describe("AI 날짜별 흐름: 같은 자리 앞 기간 칸", () => {
     assert.equal(botPrevReason(slots[3]), null);
     assert.equal(botPrevReason({ range: null, bucket: null, reason: PREV_REASON.outside }), PREV_REASON.outside);
     assert.equal(botPrevReason(null), PREV_REASON.loading);
+    // 앞 기간 응답은 왔는데 로봇 칸이 없으면(시작일 확인 안 됨) 「로봇 기록 시작 전」이 아니라 「자료 없음」
+    const noBots = prevSlotsFrom(plan, [
+      { status: "fulfilled", value: { ok: true, bundle: { ai_visits: bots("2026-11-09").ai_visits } as unknown as StatsBundle } },
+      { status: "fulfilled", value: { ok: true, bundle: null } },
+      { status: "fulfilled", value: { ok: true, bundle: bots("2026-11-09") } }
+    ]);
+    assert.equal(botPrevReason(noBots[1]), PREV_REASON.noData);
+    assert.equal(botPrevReason(noBots[2]), PREV_REASON.noData);
+    // 시작일이 확인됐고 칸 끝(11월 7일)이 그보다 앞일 때만 「로봇 기록 시작 전」
+    assert.equal(slots[1].bucket?.botsSince, "2026-11-09");
+    assert.equal(botPrevReason(slots[1]), PREV_REASON.botsBefore);
     assert.equal(visitPrevReason(slots[1]), null);
     assert.equal(visitPrevReason(slots[2]), PREV_REASON.failed);
   });
