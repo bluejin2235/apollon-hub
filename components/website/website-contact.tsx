@@ -342,6 +342,8 @@ function MemoBox({
     if (memo === base || memo === saved) setBase(saved);
   }
   const isReady = ready === "ready" && filled;
+  /** 저장하려 했는데 남이 먼저 고친 메모 (내 글은 칸에 그대로 둔다) */
+  const [conflict, setConflict] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [query, setQuery] = useState<string | null>(null);
   const [active, setActive] = useState(0);
@@ -411,8 +413,23 @@ function MemoBox({
   async function save() {
     setSaving(true);
     const sent = memo;
-    const result = await saveInquiryMemo(item.id, sent, picked);
+    const result = await saveInquiryMemo(item.id, sent, picked, base);
     setSaving(false);
+    if (!result.ok && result.error === "memo_changed") {
+      // 남이 먼저 저장했다. 최신 저장본을 기준으로 삼고, 내 글은 칸에 두고 최신 메모를 보여 준다
+      const latest = result.details && typeof result.details === "object" ? (result.details as InquiryItem) : null;
+      if (latest && latest.id === item.id) {
+        onSaved(latest);
+        setBase(latest.memo ?? "");
+        setConflict(latest.memo ?? "");
+      }
+      showToast({
+        message: "다른 분이 먼저 메모를 고쳐서 저장하지 않았습니다. 아래 최신 메모를 확인해 주세요",
+        tone: "error",
+        durationMs: 8000
+      });
+      return;
+    }
     if (!result.ok) {
       showToast({
         message:
@@ -425,6 +442,7 @@ function MemoBox({
       return;
     }
     setPicked([]);
+    setConflict(null);
     onSaved(result.data.item);
     const { message, tone } = mentionSaveMessage(result.data);
     const long = (result.data.deliveries ?? []).length > 0 || (result.data.ambiguous ?? []).length > 0;
@@ -439,6 +457,13 @@ function MemoBox({
         @로 사람을 고르면 그 사람에게 허브 알림과 메일이 갑니다. 문의한 고객에게는 보이지 않습니다.
       </p>
       {ready === "loading" ? <p className="mb-2 text-xs text-slate-400">저장된 메모를 불러오는 중입니다.</p> : null}
+      {conflict !== null ? (
+        <div className="mb-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800" role="status">
+          <p className="font-medium">다른 분이 먼저 저장한 메모</p>
+          <p className="mt-1 whitespace-pre-wrap break-words">{conflict || "(빈 메모)"}</p>
+          <p className="mt-1">아래 칸은 내가 쓴 글입니다. 이 글로 바꾸려면 다시 저장을 누르세요.</p>
+        </div>
+      ) : null}
       {ready === "failed" ? (
         <p className="mb-2 text-xs text-red-600">저장된 메모를 불러오지 못했습니다. 목록에서 문의를 다시 눌러 주세요.</p>
       ) : null}

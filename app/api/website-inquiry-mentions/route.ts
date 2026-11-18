@@ -84,6 +84,8 @@ export async function POST(request: NextRequest) {
   const record = payload && typeof payload === "object" ? (payload as Record<string, unknown>) : {};
   const inquiryId = typeof record.inquiryId === "string" ? record.inquiryId.trim() : "";
   const memo = typeof record.memo === "string" ? record.memo.slice(0, MEMO_MAX) : "";
+  /** 브라우저가 보고 고친 저장본. 지금 저장본과 다르면 남이 먼저 고친 것이라 덮어쓰지 않는다(코덱스 19차) */
+  const expected = typeof record.expected === "string" ? record.expected : null;
   if (!ID_RE.test(inquiryId)) {
     return NextResponse.json({ error: "invalid_id" }, { status: 400 });
   }
@@ -109,6 +111,10 @@ export async function POST(request: NextRequest) {
       before.body && typeof before.body === "object" ? before.body : { error: "not_found" },
       { status: before.status >= 400 ? before.status : 404 }
     );
+  }
+
+  if (expected !== null && (previous.memo ?? "") !== expected) {
+    return NextResponse.json({ error: "memo_changed", details: previous }, { status: 409 });
   }
 
   const saved = await websiteAdminFetch(path, {

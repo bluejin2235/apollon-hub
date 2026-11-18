@@ -1206,11 +1206,13 @@ export function listMentionMembers(): Promise<ApiResult<MentionMember[]>> {
 export function saveInquiryMemo(
   id: string,
   memo: string,
-  mentionIds: string[] = []
+  mentionIds: string[] = [],
+  /** 보고 고친 저장본. 서버 저장본과 다르면 memo_changed 로 거절된다 */
+  expected?: string
 ): Promise<ApiResult<InquiryMemoResult>> {
   return websiteFetch<InquiryMemoResult>(
     "/api/website-inquiry-mentions",
-    { method: "POST", body: JSON.stringify({ inquiryId: id, memo, mentionIds }) },
+    { method: "POST", body: JSON.stringify({ inquiryId: id, memo, mentionIds, expected }) },
     { hubPath: true }
   );
 }
