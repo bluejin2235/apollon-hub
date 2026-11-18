@@ -10,7 +10,7 @@ import {
   durationParts,
   isArticlePath
 } from "../../components/website/stats-v3/v3-data";
-import { compareLine, particle, rangeForPreset } from "../../components/website/stats-v3/v3-period";
+import { addIsoDays, compareLine, particle, rangeForPreset } from "../../components/website/stats-v3/v3-period";
 import type { StatsAction, StatsBundle, StatsPoint } from "../../lib/website/stats";
 
 function action(date: string, title: string, created = "2026-11-17T00:00:00Z"): StatsAction {
@@ -102,12 +102,17 @@ describe("v3 그래프 세로선", () => {
     assert.deepEqual(list.map((item) => item.title), ["새"]);
   });
 
-  it("앞 기간은 같은 순번 날짜", () => {
+  it("앞 기간은 순번이 아니라 비교 날짜로 찾고, 그 날 행이 없으면 null", () => {
+    const back2 = (date: string) => addIsoDays(date, -2);
     const series = daySeries(
       [row("2026-11-12", 5), row("2026-11-11", 3)],
       [row("2026-11-09", 2), row("2026-11-10", 4)],
-      (r) => r.users
+      (r) => r.users,
+      back2
     );
     assert.deepEqual(series, { dates: ["2026-11-11", "2026-11-12"], current: [3, 5], previous: [2, 4] });
+    // 앞 기간 11월 9일이 빠지면 11월 10일 값이 11월 11일 자리로 끌려오지 않는다
+    const gap = daySeries([row("2026-11-12", 5), row("2026-11-11", 3)], [row("2026-11-10", 4)], (r) => r.users, back2);
+    assert.deepEqual(gap.previous, [null, 4]);
   });
 });

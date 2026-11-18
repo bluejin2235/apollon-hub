@@ -1,12 +1,12 @@
 /**
- * 요약 화면 v3 — 카드 다섯 칸은 지금 요약 화면의 buildSummaryCards, 추이는 buildTrend 를 그대로 쓴다.
+ * 요약 화면 v3 — 카드 다섯 칸은 지금 요약 화면의 buildSummaryCards, 추이 이번 기간 값은 buildTrend 와 같다(앞 기간은 날짜로 찾는다).
  * 여기서 새로 정하는 것은 맨 위 답 문장(숫자로 채우는 틀)뿐이다.
  */
 
 import { byDate, type DeltaView } from "@/components/website/stats/stats-data";
-import { buildSummaryCards, buildTrend } from "@/components/website/stats/summary-data";
+import { buildSummaryCards } from "@/components/website/stats/summary-data";
 import type { SummaryCardId } from "@/components/website/stats/stats-labels";
-import { ga4, prevGuard, searchToArticleOf, visitsOf } from "@/components/website/stats-v3/v3-data";
+import { ga4, prevGuard, previousByDate, searchToArticleOf, visitsOf } from "@/components/website/stats-v3/v3-data";
 import type { StatsBundle } from "@/lib/website/stats";
 
 export type OverviewCard = {
@@ -25,21 +25,24 @@ export function overviewCards(bundle: StatsBundle | null): Map<SummaryCardId, Ov
   );
 }
 
-/** 방문자 추이 — buildTrend 값 + 세로선을 그을 날짜(같은 걸러 냄으로 정렬한 이번 기간 날짜) */
+/**
+ * 방문자 추이 — 이번 기간은 buildTrend 와 같은 값. 앞 기간은 순번이 아니라 비교 날짜(prevDateOf)로 찾는다.
+ * 앞 기간에 그 날 행이 없으면 null. 그래프는 끊기고 상자는 「앞 기간 기록 없음」.
+ */
 export function overviewTrend(bundle: StatsBundle | null): {
   dates: string[];
   current: number[];
   previous: (number | null)[];
 } {
-  const rows = buildTrend(bundle);
-  const dates = [...ga4(bundle, "daily", "current")]
-    .filter((row) => typeof row.users === "number")
-    .sort(byDate)
-    .map((row) => row.date);
+  const rows = (when: "current" | "previous") =>
+    [...ga4(bundle, "daily", when)].filter((row) => typeof row.users === "number").sort(byDate);
+  const current = rows("current");
+  const dates = current.map((row) => row.date);
+  const previous = new Map(rows("previous").map((row) => [row.date, row.users as number]));
   return {
     dates,
-    current: rows.map((row) => row.current as number),
-    previous: rows.map((row) => (typeof row.previous === "number" ? row.previous : null))
+    current: current.map((row) => row.users as number),
+    previous: previousByDate(bundle, dates, previous)
   };
 }
 

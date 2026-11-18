@@ -79,6 +79,20 @@ export type AiAnswerCount = {
   diff_count: number | null;
 };
 
+/**
+ * 질문 × AI 한 칸. 아래 네 칸(답변 내용 · 인용 주소 · 답 속 순서 · 틀린 사실)은 홈페이지가 아직 주지 않는다.
+ * 홈페이지 summarizeAiAnswers 가 website_ai_answer_checks 의 같은 이름 열을 칸에 붙이면 화면이 바로 보인다.
+ */
+export type AiAnswerCell = {
+  mentioned: boolean;
+  previous: boolean | null;
+  changed: boolean;
+  answer_excerpt?: string | null;
+  cited_urls?: string[];
+  rank_in_answer?: number | null;
+  wrong_fact_note?: string | null;
+};
+
 export type AiAnswerSummary = {
   rounds: { checked_on: string; services: string[]; checks: number }[];
   latest: string | null;
@@ -89,7 +103,7 @@ export type AiAnswerSummary = {
     question_id: number;
     question: string;
     group: string;
-    cells: Record<string, { mentioned: boolean; previous: boolean | null; changed: boolean } | undefined>;
+    cells: Record<string, AiAnswerCell | undefined>;
     changed: boolean;
   }[];
   cited_top: { url: string; count: number }[];
@@ -164,6 +178,8 @@ export type StatsQueryResult = {
       failed: { current: number; previous: number | null };
       /** llms.txt 읽은 횟수. 홈페이지가 따로 주기 전 응답에는 없다 */
       llmsTxt?: { current: number; previous: number | null };
+      /** AI 로봇 이름별 횟수. 홈페이지가 주기 전 응답에는 없다 */
+      byName?: Record<string, { current: number; previous: number | null }>;
     };
     searchEngines: {
       total: { current: number; previous: number | null };

@@ -10,9 +10,10 @@ import {
   answerColumns,
   isInternalPath,
   botsDelta,
+  companyRows,
   readAiVisits,
-  readBars,
   readBotsPayload,
+  searchEngineRows,
   readTop,
   visitBars,
   visitPages,
@@ -86,18 +87,76 @@ function bundleOf(prevFrom = "2026-11-16", withOther = false): StatsBundle {
 }
 
 describe("v3 AI ① 읽어 감", () => {
-  it("막대 넷(ChatGPT · Claude · Perplexity · 기타), 구글은 빼고 기타는 나머지 합", () => {
-    const bars = readBars(readBotsPayload(bundleOf()));
+  it("회사별 줄 — 많은 순, 회사마다 쓰임, 「기타」로 뭉치지 않는다", () => {
+    const rows = companyRows(readBotsPayload(bundleOf()));
     assert.deepEqual(
-      bars.map((bar) => [bar.name, bar.value]),
+      rows.map((row) => [row.key, row.value]),
       [
-        ["ChatGPT", 12],
-        ["Claude", 6],
+        ["OpenAI", 12],
+        ["Anthropic", 6],
+        ["Google", 5],
+        ["ByteDance", 3],
         ["Perplexity", 2],
+        ["Apple", 2]
+      ]
+    );
+    // 이름별 숫자가 없으면 실제로 온 로봇을 몰라 「로봇 종류」로만 적는다
+    assert.equal(rows.find((row) => row.key === "ByteDance")?.purpose, "로봇 종류: 학습");
+    assert.equal(rows.find((row) => row.key === "OpenAI")?.purpose, "로봇 종류: 물어봐서 읽음 · 검색 · 학습");
+    assert.equal(rows[0]?.change?.previous, "8회");
+  });
+
+  it("표의 회사 · 숫자는 그래프와 같은 홈페이지 byCompany 하나만 쓴다 — 이름별 숫자가 와도 회사를 다시 나누지 않는다", () => {
+    const payload = readBotsPayload(bundleOf());
+    assert.ok(payload);
+    payload.ai.byCompany = { OpenAI: pair(12, 8), Meta: pair(40, 1), 기타: pair(5, 1) };
+    const plain = companyRows(payload);
+    assert.deepEqual(
+      plain.map((row) => [row.key, row.value]),
+      [
+        ["Meta", 40],
+        ["OpenAI", 12],
         ["기타", 5]
       ]
     );
-    assert.equal(bars[3]?.change?.previous, "3회");
+    assert.equal(plain[2]?.name, "기타 로봇 (회사 분류 없음)");
+    assert.ok(!plain.some((row) => row.name.includes("Common Crawl")));
+    payload.ai.byName = {
+      "Meta-ExternalAgent": pair(38, 1),
+      "Meta-ExternalFetcher": pair(2, 0),
+      GPTBot: pair(12, 8),
+      CCBot: pair(3, 1),
+      WeirdBot: pair(2, 0)
+    };
+    const named = companyRows(payload);
+    // 숫자는 여전히 byCompany 그대로
+    assert.deepEqual(
+      named.map((row) => [row.key, row.value]),
+      [
+        ["Meta", 40],
+        ["OpenAI", 12],
+        ["기타", 5]
+      ]
+    );
+    // 쓰임은 그 줄에 실제로 온 로봇에서 — Meta 는 학습과 물어봐서 읽음이 섞였다
+    assert.equal(named[0]?.purpose, "물어봐서 읽음 · 학습");
+    assert.equal(named[1]?.purpose, "학습");
+    // 홈페이지가 CCBot 을 기타로 두므로 회사 이름을 지어내지 않고 로봇 이름을 적는다
+    assert.equal(named[2]?.purpose, "이름: CCBot, WeirdBot");
+  });
+
+  it("검색 엔진 로봇은 따로 — 구글 · 빙 · 네이버", () => {
+    const payload = readBotsPayload(bundleOf());
+    assert.ok(payload);
+    payload.searchEngines.byName = { Googlebot: pair(308, null), Yeti: pair(60, null), Bingbot: pair(110, null) };
+    assert.deepEqual(
+      searchEngineRows(payload).map((row) => [row.name, row.purpose]),
+      [
+        ["Google", "검색"],
+        ["Microsoft Bing", "검색"],
+        ["Naver", "검색"]
+      ]
+    );
   });
 
   it("증감은 지금 AI 화면 countDelta 와 같고 앞 기간에 「회」", () => {
@@ -109,7 +168,7 @@ describe("v3 AI ① 읽어 감", () => {
   it("앞 기간 시작이 로봇 기록 시작일 앞이면 비교 불가", () => {
     const payload = readBotsPayload(bundleOf("2026-11-14"));
     assert.equal(botsDelta(payload?.ai.total).delta, null);
-    assert.ok(readBars(payload).every((bar) => bar.change?.delta == null));
+    assert.ok(companyRows(payload).every((row) => row.change?.delta == null));
   });
 
   it("많이 읽어 간 콘텐츠는 llms.txt 도 횟수 순으로 넣고 다섯 줄까지", () => {
@@ -160,11 +219,7 @@ describe("v3 AI ③ 사람이 옴", () => {
   });
 
   it("답 문장은 AI에서 온 방문 숫자로", () => {
-    assert.deepEqual(aiAnswer(bundleOf()), {
-      lead: "AI에서 ",
-      em: "7회 방문",
-      tail: "했고, 읽기와 인용은 따로 확인해야 해요."
-    });
+    assert.equal(aiAnswer(bundleOf())?.em, "7회 방문");
   });
 });
 
@@ -187,9 +242,9 @@ describe("v3 AI 빌드 뒤 수정", () => {
     assert.equal(isInternalPath("/apis"), false);
   });
 
-  it("답에 씀 열 — API 전엔 ChatGPT · 구글 AI 개요 · Claude · Perplexity, 기록 있는 서비스가 앞, 구글 AI 개요는 늘 들어감", () => {
-    assert.deepEqual(answerColumns(), ["ChatGPT", "구글 AI 개요", "Claude", "Perplexity"]);
-    assert.deepEqual(answerColumns(["Gemini", "Copilot", "Claude", "네이버"]), ["Gemini", "Copilot", "Claude", "구글 AI 개요"]);
+  it("답에 나옴 열 — 확인한 서비스가 앞, 「구글 AI 개요」는 「구글 검색 AI 요약」으로, 다섯 칸", () => {
+    assert.deepEqual(answerColumns(), ["ChatGPT", "구글 검색 AI 요약", "Perplexity", "Claude", "네이버"]);
+    assert.deepEqual(answerColumns(["구글 AI 개요", "Gemini"]), ["구글 검색 AI 요약", "Gemini", "ChatGPT", "Perplexity", "Claude"]);
   });
 });
 

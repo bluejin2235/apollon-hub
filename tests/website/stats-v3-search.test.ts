@@ -88,20 +88,21 @@ describe("v3 검색 — 회사 이름 · 일반 명사", () => {
     assert.equal(groups?.generic.delta.delta, null);
   });
 
-  it("검색 기간 끝은 구글 자료 마지막 날", () => {
+  it("검색 기간 끝은 검색어 행이 있는 마지막 날, 앞 기간도 같은 날 수", () => {
     assert.deepEqual(searchRange(bundleOf()), {
       from: "2026-11-12",
       to: "2026-11-13",
       prevFrom: "2026-11-09",
-      prevTo: "2026-11-11"
+      prevTo: "2026-11-10"
     });
   });
 
-  it("일반 명사 클릭 추이 — 구글 일별 날짜 칸, 회사 이름은 빼고", () => {
+  it("일반 명사 클릭 추이 — 구글 일별 날짜 칸, 회사 이름은 빼고, 앞 기간은 비교 날짜로", () => {
     const series = genericClickSeries(bundleOf());
     assert.deepEqual(series.dates, ["2026-11-12", "2026-11-13"]);
     assert.deepEqual(series.current, [2, 1]);
-    assert.deepEqual(series.previous, [0, 0]);
+    // 비교 날짜 11월 9일은 검색어 행이 없어 0 이 아니라 기록 없음, 11월 10일은 회사 이름 검색만 있어 0
+    assert.deepEqual(series.previous, [null, 0]);
   });
 });
 

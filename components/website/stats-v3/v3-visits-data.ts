@@ -13,11 +13,14 @@ import {
   makeCountDelta,
   makeDelta,
   numText,
+  previousIsOldSite,
+  readActualRange,
   readMetricCompare,
   sumField,
   type DeltaView
 } from "@/components/website/stats/stats-data";
 import { countryLabel } from "@/components/website/stats/stats-labels";
+import { sourceShares, type SourceShare } from "@/components/website/stats-v3/v3-content-data";
 import type { HBarRow } from "@/components/website/stats-v3/v3-parts";
 import {
   articleEntriesOf,
@@ -33,6 +36,7 @@ import {
   pagesPerSessionOf,
   pathLang,
   prevGuard,
+  previousByDate,
   ratioDelta,
   visitsOf,
   type When
@@ -73,7 +77,7 @@ export function visitCards(bundle: StatsBundle | null): VisitCard[] {
     },
     {
       id: "entries",
-      label: "글로 바로 들어온 방문",
+      label: "워크·인사이트 글로 바로 들어온 방문",
       value: intKo(entries.current),
       unit: "회",
       delta: makeCountDelta(entries.current, entries.previous, true, withUnit("회")(intKo(entries.previous)))
@@ -117,7 +121,10 @@ export function landingTop(bundle: StatsBundle | null, titles: TitleMap, limit =
 
 export type MiniTrend = { dates: string[]; current: (number | null)[]; previous: (number | null)[] };
 
-/** buildDepthTrend · buildDwellTrend 와 같은 식 — 앞 기간은 같은 순번 날짜 */
+/**
+ * buildDepthTrend · buildDwellTrend 와 같은 값. 앞 기간은 순번이 아니라 비교 날짜(prevDateOf)로 찾는다.
+ * 그 날 앞 기간 행이 없으면 null. 그래프는 끊기고 상자는 「앞 기간 기록 없음」.
+ */
 function trendOf(
   bundle: StatsBundle | null,
   keep: (row: StatsPoint) => boolean,
@@ -125,11 +132,12 @@ function trendOf(
 ): MiniTrend {
   const rows = (when: When) => dayRows(ga4(bundle, "daily", when)).filter(keep);
   const current = rows("current");
-  const previous = prevGuard(bundle)(rows("previous")) ?? [];
+  const previous = new Map((prevGuard(bundle)(rows("previous")) ?? []).map((row) => [row.date, value(row)]));
+  const dates = current.map((row) => row.date);
   return {
-    dates: current.map((row) => row.date),
+    dates,
     current: current.map(value),
-    previous: current.map((_, index) => (previous[index] ? value(previous[index]) : null))
+    previous: previousByDate(bundle, dates, previous)
   };
 }
 
@@ -254,7 +262,7 @@ export function outcomes(bundle: StatsBundle | null): Outcome[] {
     delta: makeDelta(pair.current, pair.previous, "ratio", true, withUnit(unit)(intText(pair.previous)))
   });
   return [
-    { id: "click", title: "문의하기 누름", sub: "Let's Talk", ...make(metric("lets_talk_click"), "회") },
+    { id: "click", title: "문의하기 누름", sub: "Let's Talk 단추를 누른 횟수", ...make(metric("lets_talk_click"), "회") },
     {
       id: "lead",
       title: "문의 접수",
@@ -279,4 +287,114 @@ export function visitsAnswer(bundle: StatsBundle | null): { lead: string; em: st
     em: `${numText(depth, 1)}개 페이지`,
     tail: dwell ? `를 보고, 평균 ${dwell} 머물러요.` : "를 살펴봐요."
   };
+}
+
+/* ─────────────────────── 어디로 들어와서 어디로 나갔나 ─────────────────────── */
+
+export type EntryRow = {
+  path: string;
+  title: string;
+  lang: "ko" | "en";
+  sessions: number;
+  /** 들어온 방문 전체 중 몫(0~100, 반올림) */
+  share: number;
+  /** 검색 · AI · 직접 방문 · 기타 (0~100). 경로별 자료가 없으면 null */
+  sources: SourceShare | null;
+  delta: DeltaView;
+};
+
+/**
+ * 들어온 페이지 — 방문이 시작된 페이지(GA landing) 많은 순.
+ * GA 가 페이지를 못 남긴 방문((not set))은 목록에서 빼고 개수만 따로 돌려준다.
+ */
+export function entryRows(
+  bundle: StatsBundle | null,
+  titles: TitleMap,
+  limit = 8
+): { rows: EntryRow[]; total: number; unknown: number } {
+  const current = ga4(bundle, "landing", "current");
+  let total = 0;
+  let unknown = 0;
+  for (const row of current) {
+    if (typeof row.sessions !== "number") continue;
+    total += row.sessions;
+    if (!normalizePath(row.key)) unknown += row.sessions;
+  }
+  const prevRows = prevGuard(bundle)(ga4(bundle, "landing", "previous"));
+  const previous = prevRows && prevRows.length > 0 ? landingSessions(prevRows) : null;
+  const sources = sourceShares(bundle);
+  const rows = [...landingSessions(current).entries()]
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .slice(0, limit)
+    .map(([path, sessions]) => {
+      const before = previous ? (previous.get(path) ?? 0) : null;
+      return {
+        path,
+        title: pageTitleFromPath(path, titles),
+        lang: pathLang(path),
+        sessions,
+        share: total > 0 ? Math.round((sessions / total) * 100) : 0,
+        sources: sources.get(path) ?? null,
+        delta: makeCountDelta(sessions, before, true, withUnit("회")(intText(before)))
+      };
+    });
+  return { rows, total, unknown };
+}
+
+/** 나간 페이지를 우리 코드로 모으기 시작한 날(홈페이지 kind=page_exit) */
+export const PAGE_EXIT_SINCE = "2026-11-19";
+
+export type ExitRow = { path: string; title: string; lang: "ko" | "en"; exits: number; share: number; delta: DeltaView };
+
+/** kind=page_exit 행 — key 가 나간 페이지, 횟수는 events(GA 이벤트 수) */
+function exitCounts(rows: StatsPoint[]): Map<string, number> {
+  const map = new Map<string, number>();
+  for (const row of rows) {
+    const path = normalizePath(row.key);
+    if (!path || typeof row.events !== "number") continue;
+    map.set(path, (map.get(path) ?? 0) + row.events);
+  }
+  return map;
+}
+
+/**
+ * 나간 페이지 증감을 낼 수 있나 — 두 기간 모두 모으기 시작한 날(PAGE_EXIT_SINCE) 뒤에 있어야 한다.
+ * 앞 기간이 시작 전 날짜를 품으면 기록한 날 수가 달라 견줄 수 없다. 앞 기간은 이번 기간보다 앞이므로 앞 기간 시작만 보면 된다.
+ */
+export function exitComparable(bundle: StatsBundle | null): boolean {
+  const range = readActualRange(bundle);
+  return range != null && range.prevFrom >= PAGE_EXIT_SINCE && range.actualFrom >= PAGE_EXIT_SINCE;
+}
+
+const EXIT_NONE: DeltaView = { delta: null, tone: "flat", previous: null };
+
+/**
+ * 나간 페이지 — 방문이 끝난 페이지 많은 순. 자료가 한 줄도 없으면 rows 는 빈 배열이고 화면은 「모읍니다」를 쓴다.
+ * 어림하지 않는다. 두 기간이 모두 모으기 시작한 날 뒤가 아니면 증감은 「비교 불가」(comparable=false).
+ */
+export function exitRows(
+  bundle: StatsBundle | null,
+  titles: TitleMap,
+  limit = 8
+): { rows: ExitRow[]; total: number; comparable: boolean } {
+  const result = bundle?.page_exit;
+  const current = exitCounts(result?.current ?? []);
+  const total = [...current.values()].reduce((a, b) => a + b, 0);
+  const comparable = exitComparable(bundle) && !previousIsOldSite(bundle);
+  const previous = comparable ? exitCounts(result?.previous ?? []) : null;
+  const rows = [...current.entries()]
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .slice(0, limit)
+    .map(([path, exits]) => {
+      const before = previous ? (previous.get(path) ?? 0) : null;
+      return {
+        path,
+        title: pageTitleFromPath(path, titles),
+        lang: pathLang(path),
+        exits,
+        share: total > 0 ? Math.round((exits / total) * 100) : 0,
+        delta: before == null ? EXIT_NONE : makeCountDelta(exits, before, true, withUnit("회")(intText(before)))
+      };
+    });
+  return { rows, total, comparable };
 }

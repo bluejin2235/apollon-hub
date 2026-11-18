@@ -8,7 +8,7 @@
 
 import { pageTitleFromPath, type TitleMap } from "@/components/website/stats/content-data";
 import { makeCountDelta, pickRows, previousIsOldSite, type DeltaView } from "@/components/website/stats/stats-data";
-import { normalizePath, SEARCH_SOURCES, type When } from "@/components/website/stats-v3/v3-data";
+import { normalizePath, prevDateOf, SEARCH_SOURCES, type When } from "@/components/website/stats-v3/v3-data";
 import type { StatsBundle, StatsPoint, TargetKeywordsPayload } from "@/lib/website/stats";
 
 /** 비교용: NFKC · 소문자 · 공백·문장부호·기호 뺌 (홈페이지와 같은 규칙) */
@@ -36,7 +36,7 @@ export type TargetKeywordView = {
   /** 이 검색어로 가장 많이 들어온 페이지 제목. 검색어×페이지 자료가 없으면 null */
   landing: string | null;
   /** 날짜별 노출 — 이번 기간 / 앞 기간 같은 순번 */
-  trend: { current: number[]; previous: number[] };
+  trend: { current: number[]; previous: (number | null)[] };
 };
 
 export type TargetKeywordsView = {
@@ -100,7 +100,8 @@ export function targetKeywordsView(bundle: StatsBundle | null, titles: TitleMap)
   const queryPrev = oldSite ? [] : gscRows(bundle, "query", "previous");
   const pageCur = gscRows(bundle, "query_page", "current");
   const curDates = datesOf(queryCur);
-  const prevDates = datesOf(queryPrev);
+  const prevDates = new Set(datesOf(queryPrev));
+  const prevDate = prevDateOf(bundle);
 
   const rows = payload.rows.map((row): TargetKeywordView => {
     const norm = normalizeKeyword(row.keyword);
@@ -132,7 +133,11 @@ export function targetKeywordsView(bundle: StatsBundle | null, titles: TitleMap)
       landing: landingPath ? pageTitleFromPath(landingPath, titles) : null,
       trend: {
         current: curDates.map((date) => cur.get(date) ?? 0),
-        previous: prevDates.map((date) => prev.get(date) ?? 0)
+        // 순번이 아니라 비교 날짜로 찾는다. 그 날 검색어 행이 없으면 null(점선이 끊긴다)
+        previous: curDates.map((date) => {
+          const before = prevDate(date);
+          return before && prevDates.has(before) ? (prev.get(before) ?? 0) : null;
+        })
       }
     };
   });

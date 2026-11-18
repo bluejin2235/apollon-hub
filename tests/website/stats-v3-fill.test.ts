@@ -154,7 +154,8 @@ describe("목표 키워드 표", () => {
     assert.equal(facade.change.type, "delta");
     assert.ok(facade.landing);
     assert.deepEqual(facade.trend.current, [30, 10]);
-    assert.deepEqual(facade.trend.previous, [20]);
+    // 앞 기간은 비교 날짜(11월 15 · 16일)로 찾는다. 11월 16일은 검색어 행이 없어 null
+    assert.deepEqual(facade.trend.previous, [20, null]);
     assert.equal(view.rows[1].change.type, "none");
     assert.equal(view.rows[1].position, null);
   });
@@ -222,7 +223,7 @@ describe("AI ② 답에 씀", () => {
     assert.equal(view.questionsMentionedBefore, 2);
     assert.equal(view.rows[0].id, 1);
     assert.equal(view.rows[0].diff, 1);
-    assert.ok(view.columns.includes("ChatGPT"));
+    assert.ok(view.columns.some((col) => col.label === "ChatGPT"));
   });
 
   it("기록이 없으면 null", () => {

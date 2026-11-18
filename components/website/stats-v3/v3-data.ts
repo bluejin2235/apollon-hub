@@ -20,6 +20,7 @@ import {
   weightedField,
   type DeltaView
 } from "@/components/website/stats/stats-data";
+import { addIsoDays, inclusiveDays } from "@/components/website/stats-v3/v3-period";
 import type { PeriodUsersCompare, StatsAction, StatsBundle, StatsPoint } from "@/lib/website/stats";
 
 export type When = "current" | "previous";
@@ -266,13 +267,14 @@ export function actionsInRange(actions: StatsAction[], bundle: StatsBundle | nul
     );
 }
 
-/** 날짜별 값 — 이번 기간 실선, 앞 기간은 같은 순번 날짜 */
+/** 날짜별 값 — 이번 기간 실선, 앞 기간은 비교 날짜(prevDate)의 값. 그 날 행이 없으면 null(기록 없음) */
 export type DaySeries = { dates: string[]; current: (number | null)[]; previous: (number | null)[] };
 
 export function daySeries(
   rows: StatsPoint[],
   previousRows: StatsPoint[],
-  value: (row: StatsPoint) => number | null
+  value: (row: StatsPoint) => number | null,
+  prevDate: (date: string) => string | null
 ): DaySeries {
   const sumByDate = (list: StatsPoint[]) => {
     const map = new Map<string, number>();
@@ -287,15 +289,48 @@ export function daySeries(
   const cur = sumByDate(rows);
   const prev = sumByDate(previousRows);
   const dates = [...cur.keys()].sort();
-  const prevValues = [...prev.keys()].sort().map((date) => prev.get(date) as number);
   return {
     dates,
     current: dates.map((date) => cur.get(date) ?? null),
-    previous: dates.map((_, index) => prevValues[index] ?? null)
+    previous: dates.map((date) => {
+      const before = prevDate(date);
+      return before ? (prev.get(before) ?? null) : null;
+    })
   };
 }
 
 /** 날짜별 행 그대로(평균값 등 더하면 안 되는 값) */
 export function dayRows(rows: StatsPoint[]): StatsPoint[] {
   return [...rows].filter((row) => row.date).sort(byDate);
+}
+
+/**
+ * 이번 날짜 → 견줄 앞 기간 날짜. 두 기간 시작일 차이만큼 앞 날이다.
+ * 응답에 비교 기간이 없으면 null.
+ * 앞 기간 값은 순번이 아니라 이 날짜로 찾는다. 앞 기간에 빠진 날이 있어도 다른 날 값이 끌려오지 않게.
+ */
+export function prevDateOf(bundle: StatsBundle | null): (date: string) => string | null {
+  const range = readActualRange(bundle);
+  if (!range) return () => null;
+  const shift = inclusiveDays(range.prevFrom, range.actualFrom) - 1;
+  return (date: string) => addIsoDays(date, -shift);
+}
+
+/** 그래프 마우스 상자에 쓰는 앞 기간 날짜 — prevDateOf 와 같은 날 */
+export function prevDatesOf(bundle: StatsBundle | null, dates: string[]): (string | null)[] {
+  const of = prevDateOf(bundle);
+  return dates.map((date) => of(date));
+}
+
+/** 앞 기간 값을 비교 날짜로 찾는다. 그 날 값이 없으면 null */
+export function previousByDate(
+  bundle: StatsBundle | null,
+  dates: string[],
+  previous: Map<string, number> | null
+): (number | null)[] {
+  const of = prevDateOf(bundle);
+  return dates.map((date) => {
+    const before = of(date);
+    return previous && before ? (previous.get(before) ?? null) : null;
+  });
 }

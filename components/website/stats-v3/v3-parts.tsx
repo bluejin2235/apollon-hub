@@ -6,6 +6,7 @@
 import type { ReactNode } from "react";
 
 import type { DeltaView } from "@/components/website/stats/stats-data";
+import { valueSegments } from "@/components/website/stats-v3/v3-chart";
 
 export const PREP = "준비 중";
 
@@ -57,9 +58,11 @@ export type MetricProps = {
   delta?: DeltaView | null;
   /** 데이터가 없는 칸 — 「준비 중」 배지 + 「—」 */
   prep?: boolean;
+  /** 이 숫자가 무엇인지 한 줄 */
+  hint?: ReactNode;
 };
 
-export function Metric({ label, value, unit, delta, prep }: MetricProps) {
+export function Metric({ label, value, unit, delta, prep, hint }: MetricProps) {
   return (
     <div className="v3-metric">
       <div className="v3-metric-label">
@@ -69,6 +72,7 @@ export function Metric({ label, value, unit, delta, prep }: MetricProps) {
         {prep || value == null ? "—" : value}
         {!prep && value != null ? <span className="v3-unit">{unit}</span> : null}
       </div>
+      {hint ? <p className="v3-metric-hint">{hint}</p> : null}
       {!prep && delta ? <DeltaBlock delta={delta} /> : null}
     </div>
   );
@@ -108,26 +112,35 @@ export function Track({ value, max }: { value: number; max: number }) {
   );
 }
 
-function sparkPoints(values: number[], max: number): string {
-  if (values.length === 0) return "";
-  const step = values.length > 1 ? 76 / (values.length - 1) : 0;
-  return values
-    .map((value, i) => {
-      const x = 2 + step * i;
-      const y = 19 - (max > 0 ? (value / max) * 16 : 0);
-      return `${x.toFixed(1)},${y.toFixed(1)}`;
-    })
-    .join(" ");
+/** 작은 선의 점들. count 는 가로 칸 수(이번 기간 날 수)이고, null 칸에서는 선을 끊는다 */
+function sparkLines(values: (number | null)[], max: number, count = values.length): string[] {
+  if (values.length === 0) return [];
+  const step = count > 1 ? 76 / (count - 1) : 0;
+  return valueSegments(values).map((seg) =>
+    seg
+      .map((i) => {
+        const x = 2 + step * i;
+        const y = 19 - (max > 0 ? ((values[i] as number) / max) * 16 : 0);
+        return `${x.toFixed(1)},${y.toFixed(1)}`;
+      })
+      .join(" ")
+  );
 }
 
 /** 표 안 작은 추이 — 이번 기간 실선 · 앞 기간 점선 (목표 키워드 표) */
-export function Spark({ current, previous, label }: { current: number[]; previous: number[]; label: string }) {
+/** 이번 기간 실선 · 앞 기간 점선. previous 는 이번 날짜와 같은 자리의 비교 날짜 값(없으면 null) */
+export function Spark({ current, previous, label }: { current: number[]; previous: (number | null)[]; label: string }) {
   if (current.length < 2) return <span className="v3-muted">—</span>;
-  const max = Math.max(1, ...current, ...previous);
+  const prev = previous.slice(0, current.length);
+  const max = Math.max(1, ...current, ...prev.filter((v): v is number => typeof v === "number"));
   return (
     <svg className="v3-spark" viewBox="0 0 80 22" role="img" aria-label={label}>
-      {previous.length > 1 ? <polyline className="v3-spark-prev" points={sparkPoints(previous.slice(0, current.length), max)} /> : null}
-      <polyline className="v3-spark-cur" points={sparkPoints(current, max)} />
+      {sparkLines(prev, max, current.length).map((points) => (
+        <polyline key={`p-${points}`} className="v3-spark-prev" points={points} />
+      ))}
+      {sparkLines(current, max).map((points) => (
+        <polyline key={`c-${points}`} className="v3-spark-cur" points={points} />
+      ))}
     </svg>
   );
 }
@@ -200,4 +213,32 @@ export function StatusLine({ status, empty }: { status: "loading" | "ready" | "e
   if (status === "loading") return <p className="v3-tiny">불러오는 중입니다</p>;
   if (status === "error") return <p className="v3-tiny">불러오지 못했습니다. 잠시 뒤 다시 열어 주세요.</p>;
   return <p className="v3-tiny">{empty ?? "이 기간에는 값이 없습니다."}</p>;
+}
+
+/** 추이 카드 — 제목 · 사실 한 문장 · 비교가 공정한지 · 그래프 */
+export function TrendCard({
+  title,
+  fact,
+  note,
+  wide,
+  children
+}: {
+  title: string;
+  fact: { tone: "up" | "down" | "flat" | "none"; text: string; fair: boolean; fairText: string };
+  note?: ReactNode;
+  wide?: boolean;
+  children?: ReactNode;
+}) {
+  return (
+    <div className={wide ? "v3-trend v3-trend-wide" : "v3-trend"}>
+      <h2>{title}</h2>
+      <p className={`v3-trend-fact ${fact.tone}`}>{fact.text}</p>
+      <p className="v3-trend-note">
+        <span className={fact.fair ? "v3-fair" : "v3-fair no"}>{fact.fair ? "앞 기간과 견줄 수 있음" : "앞 기간과 견줄 수 없음"}</span>
+        {fact.fairText}
+        {note ? <> {note}</> : null}
+      </p>
+      {children}
+    </div>
+  );
 }

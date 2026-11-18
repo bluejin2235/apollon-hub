@@ -11,6 +11,7 @@ import { useStatsActionsLoader } from "@/components/website/stats/stats-actions"
 import { readActualRange } from "@/components/website/stats/stats-data";
 import type { LoadStatus } from "@/components/website/stats/stats-slot";
 import { V3Ai } from "@/components/website/stats-v3/v3-ai";
+import { aiDayBucket, aiDayRanges, type V3AiDays } from "@/components/website/stats-v3/v3-ai-days";
 import { useV3Catalog } from "@/components/website/stats-v3/v3-catalog";
 import { V3Content } from "@/components/website/stats-v3/v3-content";
 import { V3Live } from "@/components/website/stats-v3/v3-live";
@@ -20,19 +21,85 @@ import {
   previousStartsBeforeLaunch,
   rangeForPreset,
   seoulToday,
+  V3_DEFAULT_PRESET,
   syncMainLine
 } from "@/components/website/stats-v3/v3-period";
 import {
   V3_NEEDS_CATALOG,
   V3_SCREENS,
+  type V3Extras,
   type V3ScreenId,
   type V3ScreenProps
 } from "@/components/website/stats-v3/v3-screens";
 import { V3Search } from "@/components/website/stats-v3/v3-search";
 import { V3Visits } from "@/components/website/stats-v3/v3-visits";
 import "./v3.css";
-import { getStatsBundle } from "@/lib/website/api";
-import { PERIOD_PRESETS, type PeriodPresetId, type StatsBundle, type StatsSyncStatus } from "@/lib/website/stats";
+import { getAiAnswerSummary, getStatsBundle } from "@/lib/website/api";
+import {
+  PERIOD_PRESETS,
+  type AiAnswerSummary,
+  type PeriodPresetId,
+  type StatsBundle,
+  type StatsSyncStatus
+} from "@/lib/website/stats";
+
+/**
+ * AI 화면만 쓰는 따로 받는 자료 — 「답에 씀」 기록과 날짜별 로봇 · 방문.
+ * 기간은 고른 날짜가 아니라 본 응답이 실제로 센 기간(actual_from ~ actual_to)이다.
+ * 홈페이지는 오픈일(11-11)을 넘는 기간을 오픈일부터로 자르므로, 고른 날짜로 받으면 맨 위 숫자에 없는 오픈 전 날이 그래프에 섞인다.
+ * 그래서 본 응답이 오기 전(range=null)에는 받지 않고 「불러오는 중」으로 둔다.
+ * 받은 값이 어느 기간 것인지 같이 둔다. 기간을 바꾸면 새 응답 전까지 옛 기간 값을 보이지 않는다.
+ */
+function useV3Extras(enabled: boolean, range: { from: string; to: string } | null, mainFailed = false): V3Extras {
+  const from = range?.from ?? "";
+  const to = range?.to ?? "";
+  const key = `${from}|${to}`;
+  const [answers, setAnswers] = useState<{ key: string; summary: AiAnswerSummary | null; ok: boolean } | null>(null);
+  const [days, setDays] = useState<{ key: string; value: V3AiDays } | null>(null);
+
+  useEffect(() => {
+    if (!enabled || !from || !to || from > to) return;
+    const controller = new AbortController();
+    const signal = controller.signal;
+    const at = `${from}|${to}`;
+    void getAiAnswerSummary({ from, to, signal }).then((result) => {
+      if (signal.aborted) return;
+      // 표가 아직 없거나 읽기 실패면 「기록 없음」으로 둔다
+      setAnswers({ key: at, summary: result.ok ? result.data : null, ok: result.ok });
+    });
+    const ranges = aiDayRanges(from, to);
+    void Promise.all(
+      ranges.map((range) => getStatsBundle({ from: range.from, to: range.to, kinds: ["bots", "ai_visits"], signal }))
+    ).then((results) => {
+      if (signal.aborted) return;
+      if (results.some((result) => !result.ok)) {
+        setDays({ key: at, value: { state: "error", buckets: [] } });
+        return;
+      }
+      const bundles = results.map((result) => (result.ok ? result.data.bundle : null));
+      setDays({
+        key: at,
+        value: {
+          state: "ready",
+          buckets: ranges.map((range, i) => aiDayBucket(range, bundles[i])),
+          since: bundles.find((bundle) => bundle?.bots?.bots?.since)?.bots?.bots?.since ?? null
+        }
+      });
+    });
+    return () => controller.abort();
+  }, [enabled, from, to]);
+
+  const answersNow = range && answers && answers.key === key ? answers : null;
+  const daysNow = range && days && days.key === key ? days.value : null;
+  return {
+    answers: answersNow
+      ? { state: answersNow.ok ? "ready" : "none", summary: answersNow.summary }
+      : { state: "loading", summary: null },
+    aiDays: enabled
+      ? (daysNow ?? (mainFailed ? { state: "error", buckets: [] } : { state: "loading", buckets: [] }))
+      : { state: "off", buckets: [] }
+  };
+}
 
 export const V3_SCREEN_PARTS: Partial<Record<V3ScreenId, ComponentType<V3ScreenProps>>> = {
   summary: V3Overview,
@@ -150,8 +217,8 @@ export function V3Frame({ header, label, children }: { header: ReactNode; label?
 
 export function V3Shell({ screen }: { screen: V3ScreenId }) {
   const today = useMemo(() => seoulToday(), []);
-  const initial = rangeForPreset("yesterday", today);
-  const [preset, setPreset] = useState<PeriodPresetId>("yesterday");
+  const initial = rangeForPreset(V3_DEFAULT_PRESET, today);
+  const [preset, setPreset] = useState<PeriodPresetId>(V3_DEFAULT_PRESET);
   const [from, setFrom] = useState(initial.from);
   const [to, setTo] = useState(initial.to);
   const [bundle, setBundle] = useState<StatsBundle | null>(null);
@@ -160,20 +227,25 @@ export function V3Shell({ screen }: { screen: V3ScreenId }) {
   const config = V3_SCREENS.find((item) => item.id === screen);
   const kinds = config?.kinds;
   const catalog = useV3Catalog(V3_NEEDS_CATALOG.includes(screen));
+  /** 본 응답이 어느 요청 기간 것인지. 기간을 바꾼 직후 옛 응답의 실제 기간으로 AI 자료를 받지 않게 */
+  const [bundleKey, setBundleKey] = useState<string | null>(null);
 
   useEffect(() => {
     if (!kinds || !from || !to || from > to) return;
     const controller = new AbortController();
+    const at = `${from}|${to}`;
     setStatus("loading");
     void getStatsBundle({ from, to, kinds, signal: controller.signal }).then((result) => {
       if (controller.signal.aborted) return;
       if (!result.ok) {
         setBundle(null);
+        setBundleKey(null);
         setSyncStatus(null);
         setStatus("error");
         return;
       }
       setBundle(result.data.bundle);
+      setBundleKey(at);
       setSyncStatus(result.data.sync_status);
       setStatus("ready");
     });
@@ -181,6 +253,15 @@ export function V3Shell({ screen }: { screen: V3ScreenId }) {
   }, [from, to, kinds]);
 
   const apiRange = readActualRange(bundle);
+  // AI 날짜별 자료는 본 응답의 실제 기간으로 받는다. 옛 응답이라 실제 기간 칸이 없으면 고른 기간을 쓴다
+  const bundleFresh = status === "ready" && bundleKey === `${from}|${to}`;
+  const extrasFrom = bundleFresh ? (apiRange?.actualFrom ?? from) : null;
+  const extrasTo = bundleFresh ? (apiRange?.actualTo ?? to) : null;
+  const extrasRange = useMemo(
+    () => (extrasFrom && extrasTo ? { from: extrasFrom, to: extrasTo } : null),
+    [extrasFrom, extrasTo]
+  );
+  const extras = useV3Extras(screen === "ai", extrasRange, status === "error");
   const markRange = apiRange
     ? { from: apiRange.actualFrom, to: apiRange.actualTo }
     : from && to && from <= to
@@ -216,7 +297,7 @@ export function V3Shell({ screen }: { screen: V3ScreenId }) {
       }
     >
       {Screen ? (
-        <Screen bundle={bundle} status={status} from={from} to={to} today={today} catalog={catalog} actions={actions} />
+        <Screen bundle={bundle} status={status} from={from} to={to} today={today} catalog={catalog} actions={actions} extras={extras} />
       ) : null}
     </V3Frame>
   );
