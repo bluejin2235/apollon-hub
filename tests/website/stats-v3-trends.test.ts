@@ -289,6 +289,9 @@ describe("AI 묶음 칸 — 길이가 다른 칸은 하루 평균으로", () => 
     assert.equal(flat.tone, "flat");
     assert.match(flat.text, /하루 평균 10회/);
     assert.match(flat.fairText, /하루 평균으로 견줬어요/);
+    // 하루 칸인데 로봇 기록 전 날(0일 · null)이 섞여도 묶음 문장으로 바뀌지 않는다
+    const daily = trendFact({ name: "로봇", unit: "회", current: [null, null, 3, 4], days: [0, 0, 1, 1], previous: null });
+    assert.match(daily.text, /기록한 날이 2일뿐/);
     const up = trendFact({ name: "방문", unit: "회", current: [7, 7, 70, 70, 20], days: [7, 7, 7, 7, 1], previous: null });
     assert.equal(up.tone, "up");
     assert.match(up.text, /앞쪽 14일\(하루 평균 1회\)보다 뒤쪽 8일\(하루 평균 11.3회\)이 늘었어요/);

@@ -92,7 +92,8 @@ export function trendFact(input: TrendInput): TrendFact {
 
   const reason = unfairReason ?? "앞 기간 기록이 없어요.";
   const days = input.days;
-  if (days && days.some((d) => d !== 1)) {
+  // 값이 있는 칸 가운데 하루가 아닌 칸이 있을 때만 묶음으로 본다(기록 전 날의 0일 칸은 보지 않는다)
+  if (days && current.some((v, i) => typeof v === "number" && days[i] !== 1)) {
     // 며칠 묶음 — 묶음 길이가 달라도 공정하게 하루 평균으로 견준다
     const pairs = current
       .map((v, i) => (typeof v === "number" && (days[i] ?? 0) > 0 ? { v, d: days[i] } : null))
