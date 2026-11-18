@@ -1,18 +1,25 @@
 import { notFound } from "next/navigation";
 
-import { WebsiteStats } from "@/components/website/stats/website-stats";
-import { isStatsScreenId, STATS_SCREENS } from "@/lib/website/stats";
+import { WebsiteStatsActions } from "@/components/website/stats/website-stats";
+import { V3Shell } from "@/components/website/stats-v3/v3-shell";
+import { isV3ScreenId, V3_SCREENS } from "@/components/website/stats-v3/v3-screens";
+import { isStatsScreenId } from "@/lib/website/stats";
 
 type PageProps = {
   params: Promise<{ screen: string }>;
 };
 
 export function generateStaticParams() {
-  return STATS_SCREENS.map((item) => ({ screen: item.id }));
+  return [
+    ...V3_SCREENS.map((item) => ({ screen: item.id })),
+    { screen: "actions" }
+  ];
 }
 
 export default async function WebsiteStatsScreenPage({ params }: PageProps) {
   const { screen } = await params;
   if (!isStatsScreenId(screen)) notFound();
-  return <WebsiteStats screen={screen} />;
+  if (screen === "actions") return <WebsiteStatsActions />;
+  if (!isV3ScreenId(screen)) notFound();
+  return <V3Shell screen={screen} />;
 }

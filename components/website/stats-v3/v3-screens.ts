@@ -1,4 +1,4 @@
-/** 통계 v3 다섯 화면 — 주소와 받아 올 자료. 사이드바 「홈페이지 통계」도 이 목록을 쓴다 (옛 /website/stats 는 주소로만 남김) */
+/** 통계 다섯 화면 — 주소와 받아 올 자료. 사이드바 「홈페이지 통계」도 이 목록을 쓴다 */
 
 import type { StatsActionsState } from "@/components/website/stats/stats-actions";
 import type { LoadStatus } from "@/components/website/stats/stats-slot";
@@ -16,31 +16,32 @@ export type V3ScreenProps = {
   actions: StatsActionsState;
 };
 
-export type V3ScreenId = "overview" | "content" | "search" | "ai" | "visits";
+/** URL 세그먼트와 같다. summary=요약, behavior=방문 패턴 */
+export type V3ScreenId = "summary" | "content" | "search" | "ai" | "behavior";
 
 export const V3_SCREENS: { id: V3ScreenId; href: string; label: string; kinds: string[] }[] = [
   {
-    id: "overview",
-    href: "/website/stats-v3/overview",
+    id: "summary",
+    href: "/website/stats/summary",
     label: "요약",
     kinds: ["daily", "channel", "page", "query", "landing_channel", "ai_visits"]
   },
   {
     id: "content",
-    href: "/website/stats-v3/content",
+    href: "/website/stats/content",
     label: "콘텐츠",
     kinds: ["daily", "page", "landing", "landing_channel", "ai_visits", "page_engagement", "query_page"]
   },
   {
     id: "search",
-    href: "/website/stats-v3/search",
+    href: "/website/stats/search",
     label: "검색",
     kinds: ["daily", "query", "landing_channel", "target_keywords", "query_page"]
   },
-  { id: "ai", href: "/website/stats-v3/ai", label: "AI", kinds: ["bots", "ai_visits"] },
+  { id: "ai", href: "/website/stats/ai", label: "AI", kinds: ["bots", "ai_visits"] },
   {
-    id: "visits",
-    href: "/website/stats-v3/visits",
+    id: "behavior",
+    href: "/website/stats/behavior",
     label: "방문 패턴",
     kinds: ["daily", "landing", "event", "country", "device", "hourly"]
   }
@@ -51,4 +52,4 @@ export function isV3ScreenId(value: string): value is V3ScreenId {
 }
 
 /** 워크·인사이트 제목이 필요한 화면 */
-export const V3_NEEDS_CATALOG: V3ScreenId[] = ["content", "search", "ai", "visits"];
+export const V3_NEEDS_CATALOG: V3ScreenId[] = ["content", "search", "ai", "behavior"];
