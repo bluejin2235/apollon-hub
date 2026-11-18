@@ -67,6 +67,11 @@ type ExtrasRange = {
   prevTo: string;
   /** 새 홈페이지를 연 날. 이보다 앞에 걸친 앞 기간 칸은 받지 않는다 */
   launch: string | null;
+  /**
+   * 본 요청과 같은 입력 번호. 같은 날짜로 되돌리거나 실제 기간이 같게 잘려도 번호가 다르면
+   * 옛 날짜별 자료 · 옛 실패 · 옛 비교 값 · 옛 답에 씀 기록을 쓰지 않고 새 요청을 기다린다
+   */
+  seq: number;
 };
 
 type DayFetch = { ok: true; bundle: StatsBundle | null } | { ok: false };
@@ -85,8 +90,9 @@ function useV3Extras(enabled: boolean, range: ExtrasRange | null, mainFailed = f
   const prevFrom = range?.prevFrom ?? "";
   const prevTo = range?.prevTo ?? "";
   const launch = range?.launch ?? null;
-  const key = `${from}|${to}`;
-  const prevKey = `${from}|${to}|${prevFrom}|${prevTo}|${launch ?? ""}`;
+  const seq = range?.seq ?? -1;
+  const key = `${seq}|${from}|${to}`;
+  const prevKey = `${seq}|${from}|${to}|${prevFrom}|${prevTo}|${launch ?? ""}`;
   const [answers, setAnswers] = useState<{ key: string; summary: AiAnswerSummary | null; ok: boolean } | null>(null);
   const [days, setDays] = useState<{ key: string; value: V3AiDays } | null>(null);
   const [prevSlots, setPrevSlots] = useState<{ key: string; slots: AiPrevSlot[] } | null>(null);
@@ -96,7 +102,7 @@ function useV3Extras(enabled: boolean, range: ExtrasRange | null, mainFailed = f
     if (!enabled || !from || !to || from > to) return;
     const controller = new AbortController();
     const signal = controller.signal;
-    const at = `${from}|${to}`;
+    const at = `${seq}|${from}|${to}`;
     void getAiAnswerSummary({ from, to, signal }).then(
       (result) => {
         if (signal.aborted) return;
@@ -127,14 +133,14 @@ function useV3Extras(enabled: boolean, range: ExtrasRange | null, mainFailed = f
       });
     });
     return () => controller.abort();
-  }, [enabled, from, to]);
+  }, [enabled, from, to, seq]);
 
   // ② 앞 기간: 따로 받는다. 받은 칸만 붙이고, 실패 · 거절된 칸은 그 칸만 「앞 기간 자료를 받지 못함」
   useEffect(() => {
     if (!enabled || !from || !to || from > to) return;
     const controller = new AbortController();
     const signal = controller.signal;
-    const at = `${from}|${to}|${prevFrom}|${prevTo}|${launch ?? ""}`;
+    const at = `${seq}|${from}|${to}|${prevFrom}|${prevTo}|${launch ?? ""}`;
     const plan = prevSlotPlan(aiDayRanges(from, to), from, prevFrom, prevTo, launch);
     const wanted = plan.filter((slot) => !slot.reason && slot.range).map((slot) => slot.range as AiDayRange);
     void Promise.allSettled(wanted.map((day) => fetchDay(day, signal))).then((settled) => {
@@ -142,7 +148,7 @@ function useV3Extras(enabled: boolean, range: ExtrasRange | null, mainFailed = f
       setPrevSlots({ key: at, slots: prevSlotsFrom(plan, settled) });
     });
     return () => controller.abort();
-  }, [enabled, from, to, prevFrom, prevTo, launch]);
+  }, [enabled, from, to, prevFrom, prevTo, launch, seq]);
 
   const answersNow = range && answers && answers.key === key ? answers : null;
   const daysNow = range && days && days.key === key ? days.value : null;
@@ -335,9 +341,16 @@ export function V3Shell({ screen }: { screen: V3ScreenId }) {
   const extrasRange = useMemo(
     () =>
       extrasFrom && extrasTo
-        ? { from: extrasFrom, to: extrasTo, prevFrom: extrasPrevFrom, prevTo: extrasPrevTo, launch: extrasLaunch }
+        ? {
+            from: extrasFrom,
+            to: extrasTo,
+            prevFrom: extrasPrevFrom,
+            prevTo: extrasPrevTo,
+            launch: extrasLaunch,
+            seq: inputSeq
+          }
         : null,
-    [extrasFrom, extrasTo, extrasPrevFrom, extrasPrevTo, extrasLaunch]
+    [extrasFrom, extrasTo, extrasPrevFrom, extrasPrevTo, extrasLaunch, inputSeq]
   );
   const extras = useV3Extras(screen === "ai", extrasRange, mainFailed);
   // 조치 기록도 옛 기간 응답의 실제 기간으로 받지 않는다. 새 응답 전에는 고른 날짜를 쓴다

@@ -28,6 +28,9 @@ import {
   fileSizeLabel,
   findInquiryFile,
   inquiryDownloadUrl,
+  inquiryListView,
+  inquirySummaryText,
+  mentionPickerText,
   inquiryFileKey,
   inquiryStatus,
   inquiryTitle,
@@ -42,6 +45,7 @@ import {
   type InquiryList,
   type InquirySection,
   type InquiryStatus,
+  type LoadState,
   type MentionMember
 } from "@/lib/website/contact";
 
@@ -98,7 +102,8 @@ function SummaryCard({
   onClick
 }: {
   label: string;
-  value: number;
+  /** 숫자, 또는 받기 전 · 실패 글(inquirySummaryText) */
+  value: string;
   active?: boolean;
   onClick?: () => void;
 }) {
@@ -303,12 +308,12 @@ function InquiryAttachments({ id }: { id: string }) {
 function MemoBox({
   item,
   members,
-  membersFailed,
+  membersState,
   onSaved
 }: {
   item: InquiryItem;
   members: MentionMember[];
-  membersFailed: boolean;
+  membersState: LoadState;
   onSaved: (row: InquiryItem) => void;
 }) {
   const saved = item.memo ?? "";
@@ -427,11 +432,11 @@ function MemoBox({
         />
         {query !== null ? (
           <div className="absolute left-0 right-0 top-full z-20 mt-1 max-h-64 overflow-y-auto rounded-lg border border-slate-200 bg-white shadow-lg">
-            {membersFailed ? (
-              <p className="px-3 py-2 text-sm text-red-600">사람 목록을 불러오지 못했습니다</p>
-            ) : options.length === 0 ? (
+            {membersState === "error" ? (
+              <p className="px-3 py-2 text-sm text-red-600">{mentionPickerText(membersState, members.length, 0)}</p>
+            ) : options.length === 0 || membersState === "loading" ? (
               <p className="px-3 py-2 text-sm text-slate-400">
-                {members.length === 0 ? "사람 목록을 불러오는 중…" : "맞는 사람이 없습니다"}
+                {mentionPickerText(membersState, members.length, options.length)}
               </p>
             ) : (
               <ul role="listbox" aria-label="부를 사람">
@@ -483,13 +488,13 @@ function MemoBox({
 function InquiryDetail({
   item,
   members,
-  membersFailed,
+  membersState,
   onChanged,
   onClose
 }: {
   item: InquiryItem;
   members: MentionMember[];
-  membersFailed: boolean;
+  membersState: LoadState;
   onChanged: (row: InquiryItem) => void;
   onClose: () => void;
 }) {
@@ -606,7 +611,7 @@ function InquiryDetail({
         key={item.id}
         item={item}
         members={members}
-        membersFailed={membersFailed}
+        membersState={membersState}
         onSaved={onChanged}
       />
     </div>
@@ -618,39 +623,67 @@ function InboxTab() {
   const [filter, setFilter] = useState<InquiryFilter>("all");
   const [data, setData] = useState<InquiryList | null>(null);
   const [selected, setSelected] = useState<InquiryItem | null>(null);
-  const [loading, setLoading] = useState(true);
+  /** 지금 검색 · 거르기 조건의 목록 상태 */
+  const [listState, setListState] = useState<LoadState>("loading");
+  /** 목록 요청 번호. 늦게 온 옛 요청의 응답이 최신 결과를 덮지 않게 마지막 번호의 응답만 쓴다 */
+  const listSeq = useRef(0);
   const [members, setMembers] = useState<MentionMember[]>([]);
-  const [membersFailed, setMembersFailed] = useState(false);
+  /** 사람 목록 상태. 빈 목록도 받은 것(ready)이라 길이로 짐작하지 않는다 */
+  const [membersState, setMembersState] = useState<LoadState>("loading");
   const detailRef = useRef<HTMLDivElement>(null);
   const linkOpened = useRef(false);
 
-  const load = useCallback(async () => {
-    const result = await listInquiries({
-      q: q.trim() || undefined,
-      filter
-    });
-    if (result.ok) {
-      setData(result.data);
-      setSelected((current) => {
-        if (!current) return current;
-        const row = result.data.items.find((item) => item.id === current.id);
-        return row ? mergeInquiry(current, row) : current;
-      });
-    } else {
+  /**
+   * 목록 받기. fresh=true(검색 · 거르기를 바꿈)면 옛 목록 · 요약을 지우고 「불러오는 중」으로 둔다.
+   * fresh=false(메모 저장 · 읽음 뒤 새로 고침)면 지금 목록을 둔 채 받는다.
+   */
+  const load = useCallback(
+    async (fresh = false) => {
+      const seq = ++listSeq.current;
+      if (fresh) {
+        setData(null);
+        setListState("loading");
+      }
+      let result: Awaited<ReturnType<typeof listInquiries>>;
+      try {
+        result = await listInquiries({ q: q.trim() || undefined, filter });
+      } catch {
+        result = { ok: false, error: "network_error", status: 0 };
+      }
+      if (seq !== listSeq.current) return;
+      if (result.ok) {
+        const list = result.data;
+        setData(list);
+        setListState("ready");
+        setSelected((current) => {
+          if (!current) return current;
+          const row = list.items.find((item) => item.id === current.id);
+          return row ? mergeInquiry(current, row) : current;
+        });
+        return;
+      }
       showToast({ message: "문의를 불러오지 못했습니다", tone: "error" });
-    }
-    setLoading(false);
-  }, [q, filter]);
+      // 새로 고침이 실패하면 보이던 목록은 둔다. 조건을 바꾼 뒤의 실패면 실패로 보인다
+      if (fresh) setListState("error");
+      else setListState((state) => (state === "ready" ? state : "error"));
+    },
+    [q, filter]
+  );
 
   useEffect(() => {
-    void load();
+    void load(true);
   }, [load]);
 
   useEffect(() => {
-    void listMentionMembers().then((result) => {
-      if (result.ok) setMembers(result.data);
-      else setMembersFailed(true);
-    });
+    void listMentionMembers().then(
+      (result) => {
+        if (result.ok) {
+          setMembers(result.data);
+          setMembersState("ready");
+        } else setMembersState("error");
+      },
+      () => setMembersState("error")
+    );
   }, []);
 
   // 지금 열린 문의 id 와 그 요청. 다른 문의를 열거나 닫으면 앞 요청을 끊고, 늦게 온 응답은 버린다.
@@ -728,23 +761,24 @@ function InboxTab() {
 
   const items = data?.items ?? [];
   const searching = q.trim().length > 0 || filter !== "all";
+  const listView = inquiryListView(listState, items.length, searching);
 
   return (
     <div className="space-y-5">
       <div className="grid gap-3 sm:grid-cols-3">
         <SummaryCard
           label="안 읽은 문의"
-          value={data?.summary.unread ?? 0}
+          value={inquirySummaryText(listState, data?.summary.unread)}
           active={filter === "unread"}
           onClick={() => setFilter(filter === "unread" ? "all" : "unread")}
         />
         <SummaryCard
           label="답장 기다리는 문의 (미처리)"
-          value={data?.summary.pending ?? 0}
+          value={inquirySummaryText(listState, data?.summary.pending)}
           active={filter === "pending"}
           onClick={() => setFilter(filter === "pending" ? "all" : "pending")}
         />
-        <SummaryCard label="이번 달 들어온 문의" value={data?.summary.thisMonth ?? 0} />
+        <SummaryCard label="이번 달 들어온 문의" value={inquirySummaryText(listState, data?.summary.thisMonth)} />
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
@@ -776,7 +810,7 @@ function InboxTab() {
             <InquiryDetail
               item={selected}
               members={members}
-              membersFailed={membersFailed}
+              membersState={membersState}
               onChanged={(row) => {
                 applyIfOpen(row);
                 void load();
@@ -791,7 +825,7 @@ function InboxTab() {
         </div>
 
         <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
-          {items.length > 0 ? (
+          {listView === "items" ? (
             <ul>
               {items.map((row) => {
                 const unread = !row.is_read;
@@ -830,9 +864,20 @@ function InboxTab() {
                 );
               })}
             </ul>
-          ) : loading ? (
+          ) : listView === "loading" ? (
             <p className="px-4 py-10 text-center text-sm text-slate-400">불러오는 중…</p>
-          ) : searching ? (
+          ) : listView === "error" ? (
+            <div className="px-4 py-10 text-center text-sm text-red-600">
+              <p>문의를 불러오지 못했습니다</p>
+              <button
+                type="button"
+                className="mt-2 rounded-md border border-slate-200 px-3 py-1 text-xs text-slate-600 hover:bg-slate-50"
+                onClick={() => void load(true)}
+              >
+                다시 불러오기
+              </button>
+            </div>
+          ) : listView === "empty-search" ? (
             <div className="px-4 py-10 text-center text-sm text-slate-400">
               <p>조건에 맞는 문의가 없습니다</p>
               <button

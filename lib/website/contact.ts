@@ -251,6 +251,42 @@ export function inquiryDownloadUrl(url: string, name: string): string | null {
   return parsed.toString();
 }
 
+/** 목록 · 사람 목록처럼 받아 오는 자료의 상태. 길이로 짐작하지 않는다(빈 목록도 받은 것) */
+export type LoadState = "loading" | "ready" | "error";
+
+/**
+ * 문의 목록 칸에 무엇을 그리나.
+ * 받기 전 · 실패를 「문의가 없습니다」로 보이지 않는다. 검색 · 거르기를 바꾸면 맞는 응답이 올 때까지 loading.
+ */
+export function inquiryListView(
+  state: LoadState,
+  count: number,
+  searching: boolean
+): "items" | "loading" | "error" | "empty-search" | "empty" {
+  if (state === "loading") return "loading";
+  if (state === "error") return "error";
+  if (count > 0) return "items";
+  return searching ? "empty-search" : "empty";
+}
+
+/** 요약 칸 글: 받은 뒤에만 숫자. 받기 전 「불러오는 중」, 실패면 「불러오지 못함」(0 으로 보이지 않게) */
+export function inquirySummaryText(state: LoadState, value: number | null | undefined): string {
+  if (state === "loading") return "불러오는 중";
+  if (state === "error" || value == null) return "불러오지 못함";
+  return value.toLocaleString("ko-KR");
+}
+
+/**
+ * 메모 @부르기 칸 안내 글. 고를 사람이 있으면 null.
+ * 받는 중 · 실패 · 받았는데 사람이 없음 · 찾는 이름이 없음을 나눈다(빈 목록을 「불러오는 중」으로 두지 않는다)
+ */
+export function mentionPickerText(state: LoadState, memberCount: number, optionCount: number): string | null {
+  if (state === "loading") return "사람 목록을 불러오는 중…";
+  if (state === "error") return "사람 목록을 불러오지 못했습니다";
+  if (optionCount > 0) return null;
+  return memberCount === 0 ? "부를 수 있는 사람이 없습니다" : "맞는 사람이 없습니다";
+}
+
 /** 고객이 쓴 글: text, 없으면 message */
 export function customerTextOf(item: InquiryItem): string | null {
   if (typeof item.text === "string") return item.text;

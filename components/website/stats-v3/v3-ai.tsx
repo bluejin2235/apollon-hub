@@ -543,7 +543,7 @@ function AnswerCard({ extras, today }: Pick<V3ScreenProps, "extras" | "today">) 
     return (
       <div className="v3-card v3-ai-wide">
         {head}
-        <p className="v3-tiny">이 기간에 AI에게 직접 물어본 기록이 없어요. 물어본 날이 이 기간 안에 있어야 보여요.</p>
+        <EmptyText>이 기간에 AI에게 직접 물어본 기록이 없어요. 물어본 날이 이 기간 안에 있어야 보여요.</EmptyText>
       </div>
     );
   }
@@ -731,7 +731,9 @@ export function V3Ai({ bundle, status, catalog, from, to, today, extras }: V3Scr
       <div className="v3-ai-grid">
         <ReadCard bundle={bundle} status={status} catalog={catalog} from={from} to={to} today={today} />
         <VisitCard bundle={bundle} status={status} catalog={catalog} />
-        <AnswerCard extras={extras} today={today} />
+        <Source state={answersSource(extras.answers.state)}>
+          <AnswerCard extras={extras} today={today} />
+        </Source>
       </div>
     </>
   );

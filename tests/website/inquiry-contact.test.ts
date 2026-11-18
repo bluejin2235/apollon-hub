@@ -6,6 +6,9 @@ import {
   customerTextOf,
   findInquiryFile,
   inquiryDownloadUrl,
+  inquiryListView,
+  inquirySummaryText,
+  mentionPickerText,
   inquiryFileKey,
   inquiryStatus,
   inquiryTitle,
@@ -252,5 +255,32 @@ describe("isLetsTalkInquiry · inquiryStatus", () => {
     assert.equal(inquiryStatus(row()), "unread");
     assert.equal(inquiryStatus(row({ is_read: true })), "pending");
     assert.equal(inquiryStatus(row({ is_read: true, replied_at: "2026-11-18" })), "done");
+  });
+});
+
+describe("문의 목록 · 요약 · 사람 목록 상태", () => {
+  it("받기 전 · 실패는 「문의가 없습니다」가 아니라 불러오는 중 · 실패", () => {
+    assert.equal(inquiryListView("loading", 0, false), "loading");
+    // 검색 · 거르기를 바꿔 옛 목록이 남아 있어도 맞는 응답 전에는 불러오는 중
+    assert.equal(inquiryListView("loading", 5, true), "loading");
+    assert.equal(inquiryListView("error", 0, false), "error");
+    assert.equal(inquiryListView("ready", 0, false), "empty");
+    assert.equal(inquiryListView("ready", 0, true), "empty-search");
+    assert.equal(inquiryListView("ready", 2, false), "items");
+  });
+
+  it("요약 칸은 받은 뒤에만 숫자, 그 전에는 0 이 아니라 상태 글", () => {
+    assert.equal(inquirySummaryText("loading", undefined), "불러오는 중");
+    assert.equal(inquirySummaryText("error", undefined), "불러오지 못함");
+    assert.equal(inquirySummaryText("ready", 0), "0");
+    assert.equal(inquirySummaryText("ready", 1234), "1,234");
+  });
+
+  it("사람 목록이 빈 채로 왔으면 「불러오는 중」에 머물지 않는다", () => {
+    assert.equal(mentionPickerText("loading", 0, 0), "사람 목록을 불러오는 중…");
+    assert.equal(mentionPickerText("ready", 0, 0), "부를 수 있는 사람이 없습니다");
+    assert.equal(mentionPickerText("ready", 3, 0), "맞는 사람이 없습니다");
+    assert.equal(mentionPickerText("ready", 3, 2), null);
+    assert.equal(mentionPickerText("error", 0, 0), "사람 목록을 불러오지 못했습니다");
   });
 });
