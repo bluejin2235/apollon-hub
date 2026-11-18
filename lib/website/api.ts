@@ -1173,8 +1173,8 @@ export function listInquiries(params?: {
   return websiteFetch<InquiryList>(`inquiries${queryString(params)}`);
 }
 
-export function getInquiry(id: string): Promise<ApiResult<InquiryItem>> {
-  return websiteFetch<InquiryItem>(`inquiries/${id}`);
+export function getInquiry(id: string, signal?: AbortSignal): Promise<ApiResult<InquiryItem>> {
+  return websiteFetch<InquiryItem>(`inquiries/${id}`, signal ? { signal } : undefined);
 }
 
 /** Let's Talk 첨부 목록 + 10분짜리 내려받기 주소 */
@@ -1184,11 +1184,13 @@ export function getInquiryFiles(id: string): Promise<ApiResult<InquiryFiles>> {
 
 export function updateInquiry(
   id: string,
-  body: { is_read?: boolean; replied_at?: string | null | true; memo?: string | null }
+  body: { is_read?: boolean; replied_at?: string | null | true; memo?: string | null },
+  signal?: AbortSignal
 ): Promise<ApiResult<InquiryItem>> {
   return websiteFetch<InquiryItem>(`inquiries/${id}`, {
     method: "PATCH",
-    body: JSON.stringify(body)
+    body: JSON.stringify(body),
+    ...(signal ? { signal } : {})
   });
 }
 
@@ -1197,11 +1199,18 @@ export function listMentionMembers(): Promise<ApiResult<MentionMember[]>> {
   return websiteFetch<MentionMember[]>("/api/website-inquiry-mentions", undefined, { hubPath: true });
 }
 
-/** 내부 메모 저장. 새로 부른 사람에게 허브 알림과 메일을 보낸다. */
-export function saveInquiryMemo(id: string, memo: string): Promise<ApiResult<InquiryMemoResult>> {
+/**
+ * 내부 메모 저장. 새로 부른 사람에게 허브 알림과 메일을 보낸다.
+ * mentionIds: 목록에서 고른 사람 id (같은 이름이 여럿이어도 고른 사람만 부른다)
+ */
+export function saveInquiryMemo(
+  id: string,
+  memo: string,
+  mentionIds: string[] = []
+): Promise<ApiResult<InquiryMemoResult>> {
   return websiteFetch<InquiryMemoResult>(
     "/api/website-inquiry-mentions",
-    { method: "POST", body: JSON.stringify({ inquiryId: id, memo }) },
+    { method: "POST", body: JSON.stringify({ inquiryId: id, memo, mentionIds }) },
     { hubPath: true }
   );
 }

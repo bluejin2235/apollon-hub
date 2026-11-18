@@ -1,15 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getApiUser, getServiceSupabase } from "@/lib/auth/get-api-user";
-import { canAccessWebsiteAdmin } from "@/lib/auth/website-tester";
 import { websiteAdminFetch } from "@/lib/website/client";
-import { mentionedMemberNames, type InquiryItem, type MentionMember } from "@/lib/website/contact";
-import { applyHubActorHeaders, getHubActor } from "@/lib/website/hub-actor";
+import {
+  resolveNewMentions,
+  type InquiryItem,
+  type InquiryMemoResult,
+  type MentionMember
+} from "@/lib/website/contact";
+import { applyHubActorHeaders, getHubActor, isMentionEligible } from "@/lib/website/hub-actor";
 import { loadMentionTargets, notifyInquiryMentions } from "@/lib/website/inquiry-mentions";
 
 export const runtime = "nodejs";
 
 const MEMO_MAX = 2000;
 const ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
+const MENTION_IDS_MAX = 50;
 
 async function gate(request: NextRequest) {
   const user = await getApiUser(request);
@@ -23,7 +28,8 @@ async function gate(request: NextRequest) {
     } as const;
   }
   const actor = await getHubActor(admin, user.id);
-  if (!canAccessWebsiteAdmin(actor.role)) {
+  // 홈페이지 어드민 권한 + 퇴사자 · 홈페이지테스터 제외 (불리는 사람 목록과 같은 기준)
+  if (!isMentionEligible(actor)) {
     return { error: NextResponse.json({ error: "Forbidden" }, { status: 403 }) } as const;
   }
   return { user, admin, actor } as const;
@@ -38,10 +44,15 @@ function inquiryFromBody(body: unknown): InquiryItem | null {
   return row as InquiryItem;
 }
 
+/** 알림 · 메일 제목. 홈페이지 제목이 없으면 고객 이름 대신 접수번호만 쓴다. */
 function titleOf(row: InquiryItem): string {
   const title = row.title?.trim();
   if (title) return title;
-  return `${row.name}${row.company ? ` · ${row.company}` : ""} 문의`;
+  return row.receipt_no ? `홈페이지 문의 ${row.receipt_no}` : "홈페이지 문의";
+}
+
+function lookupFailed() {
+  return NextResponse.json({ error: "mention_lookup_failed" }, { status: 503 });
 }
 
 /** 메모에서 @ 로 고를 사람 목록 (이름 · 팀) */
@@ -49,6 +60,7 @@ export async function GET(request: NextRequest) {
   const checked = await gate(request);
   if ("error" in checked) return checked.error;
   const targets = await loadMentionTargets(checked.admin);
+  if (!targets) return lookupFailed();
   const data: MentionMember[] = targets.map(({ id, name, team }) => ({ id, name, team }));
   return NextResponse.json({ data });
 }
@@ -56,6 +68,7 @@ export async function GET(request: NextRequest) {
 /**
  * 내부 메모 저장 + 새로 부른 사람 알림.
  * 이전 메모는 브라우저 값을 믿지 않고 홈페이지에서 다시 읽는다.
+ * mentionIds: 목록에서 고른 사람 id. 사람 목록과 메모 속 @이름 으로 서버에서 다시 확인한다.
  */
 export async function POST(request: NextRequest) {
   const checked = await gate(request);
@@ -74,6 +87,16 @@ export async function POST(request: NextRequest) {
   if (!ID_RE.test(inquiryId)) {
     return NextResponse.json({ error: "invalid_id" }, { status: 400 });
   }
+  const rawIds: unknown[] = Array.isArray(record.mentionIds) ? record.mentionIds : [];
+  const mentionIds = [
+    ...new Set(
+      rawIds.filter((id): id is string => typeof id === "string" && id.length > 0 && id.length <= 64)
+    )
+  ].slice(0, MENTION_IDS_MAX);
+
+  // 부를 사람 목록을 못 읽으면 저장하지 않고 실패로 돌려준다 (아무도 안 부른 것처럼 보이지 않게)
+  const targets = await loadMentionTargets(admin);
+  if (!targets) return lookupFailed();
 
   const headers = new Headers();
   applyHubActorHeaders(headers, user.id, actor.name);
@@ -101,22 +124,30 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const targets = await loadMentionTargets(admin);
-  const names = targets.map((target) => target.name);
-  const already = new Set(mentionedMemberNames(previous.memo ?? "", names));
-  const fresh = new Set(mentionedMemberNames(memo, names).filter((name) => !already.has(name)));
+  const { ids, ambiguous } = resolveNewMentions({
+    previous: previous.memo ?? "",
+    next: memo,
+    members: targets,
+    mentionIds
+  });
+  const fresh = new Set(ids);
 
-  let result = { notified: [] as string[], mailFailed: [] as string[] };
-  if (fresh.size > 0) {
-    result = await notifyInquiryMentions(admin, {
-      targets: targets.filter((target) => fresh.has(target.name)),
-      actorId: user.id,
-      actorName: actor.name?.trim() || "허브 사용자",
-      inquiryId,
-      inquiryTitle: titleOf({ ...previous, ...updated, title: updated.title ?? previous.title }),
-      memo
-    });
-  }
+  const deliveries =
+    fresh.size > 0
+      ? await notifyInquiryMentions(admin, {
+          targets: targets.filter((target) => fresh.has(target.id)),
+          actorId: user.id,
+          actorName: actor.name?.trim() || "허브 사용자",
+          inquiryId,
+          inquiryTitle: titleOf({
+            ...previous,
+            ...updated,
+            title: updated.title ?? previous.title,
+            receipt_no: updated.receipt_no ?? previous.receipt_no
+          })
+        })
+      : [];
 
-  return NextResponse.json({ data: { item: updated, ...result } });
+  const data: InquiryMemoResult = { item: updated, deliveries, ambiguous };
+  return NextResponse.json({ data });
 }

@@ -2,11 +2,19 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import {
+  countMentionTokens,
+  customerTextOf,
+  findInquiryFile,
+  inquiryFileKey,
   inquiryStatus,
   inquiryTitle,
+  isCompanyEmail,
   isLetsTalkInquiry,
+  mentionSaveMessage,
   mentionedMemberNames,
-  type InquiryItem
+  resolveNewMentions,
+  type InquiryItem,
+  type MentionMember
 } from "../../lib/website/contact";
 
 function row(extra: Partial<InquiryItem> = {}): InquiryItem {
@@ -45,6 +53,161 @@ describe("mentionedMemberNames", () => {
 
   it("목록에 없는 이름 · 메일 주소는 무시", () => {
     assert.deepEqual(mentionedMemberNames("a@example.com @박모 확인", names), []);
+  });
+});
+
+describe("countMentionTokens 경계", () => {
+  it("메일 주소 안의 @이름 은 부른 것이 아니다", () => {
+    assert.deepEqual(mentionedMemberNames("vendor@ann.example 로 보내 주세요", ["ann"]), []);
+    assert.deepEqual(mentionedMemberNames("x@ann", ["ann"]), []);
+  });
+
+  it("앞은 처음 · 빈칸 · 문장부호, 뒤는 끝 · 빈칸 · 문장부호", () => {
+    assert.equal(countMentionTokens("@ann", ["ann"]).get("ann"), 1);
+    assert.equal(countMentionTokens("(@ann) 봐 주세요, @ann.", ["ann"]).get("ann"), 2);
+    assert.equal(countMentionTokens("줄바꿈\n@ann\t확인", ["ann"]).get("ann"), 1);
+    assert.deepEqual(mentionedMemberNames("@annie 확인", ["ann"]), []);
+    assert.deepEqual(mentionedMemberNames("@김철수님 확인", ["김철수"]), []);
+  });
+
+  it("짧은 이름이 긴 이름 앞부분과 겹쳐도 긴 이름만", () => {
+    assert.deepEqual(mentionedMemberNames("@김철수 확인", ["김철", "김철수"]), ["김철수"]);
+  });
+});
+
+describe("resolveNewMentions", () => {
+  const members: MentionMember[] = [
+    { id: "u1", name: "김민수", team: "영업" },
+    { id: "u2", name: "김민수", team: "디자인" },
+    { id: "u3", name: "이영희", team: null }
+  ];
+
+  it("같은 이름 둘: 고른 id 만 부른다", () => {
+    const result = resolveNewMentions({
+      previous: "",
+      next: "@김민수 확인해 주세요",
+      members,
+      mentionIds: ["u2"]
+    });
+    assert.deepEqual(result, { ids: ["u2"], ambiguous: [] });
+  });
+
+  it("고른 id 라도 메모에서 @이름 이 지워졌으면 부르지 않는다", () => {
+    const result = resolveNewMentions({
+      previous: "",
+      next: "확인해 주세요",
+      members,
+      mentionIds: ["u3"]
+    });
+    assert.deepEqual(result, { ids: [], ambiguous: [] });
+  });
+
+  it("목록에 없는 id 는 버린다", () => {
+    const result = resolveNewMentions({
+      previous: "",
+      next: "@이영희",
+      members,
+      mentionIds: ["ghost"]
+    });
+    assert.deepEqual(result, { ids: ["u3"], ambiguous: [] });
+  });
+
+  it("id 없는 옛 방식: 한 사람뿐이면 부르고, 같은 이름이 여럿이면 아무도 안 부른다", () => {
+    const result = resolveNewMentions({
+      previous: "",
+      next: "@김민수 @이영희 봐 주세요",
+      members
+    });
+    assert.deepEqual(result, { ids: ["u3"], ambiguous: ["김민수"] });
+  });
+
+  it("이전 메모에 이미 있던 @이름 은 다시 부르지 않는다", () => {
+    const result = resolveNewMentions({
+      previous: "@이영희 봐 주세요",
+      next: "@이영희 봐 주세요. 추가 메모",
+      members
+    });
+    assert.deepEqual(result, { ids: [], ambiguous: [] });
+  });
+
+  it("옛 방식도 경계를 지킨다", () => {
+    const result = resolveNewMentions({
+      previous: "",
+      next: "lee@이영희.example",
+      members
+    });
+    assert.deepEqual(result, { ids: [], ambiguous: [] });
+  });
+});
+
+describe("isCompanyEmail", () => {
+  it("회사 도메인만", () => {
+    assert.equal(isCompanyEmail("a@apollonworks.com"), true);
+    assert.equal(isCompanyEmail(" A@ApollonWorks.COM "), true);
+    assert.equal(isCompanyEmail("a@gmail.com"), false);
+    assert.equal(isCompanyEmail("a@apollonworks.com.evil.io"), false);
+    assert.equal(isCompanyEmail("a@sub.apollonworks.com"), false);
+    assert.equal(isCompanyEmail("a@b@apollonworks.com"), false);
+    assert.equal(isCompanyEmail("@apollonworks.com"), false);
+    assert.equal(isCompanyEmail(null), false);
+  });
+});
+
+describe("mentionSaveMessage", () => {
+  it("아무도 안 불렀으면 저장만", () => {
+    assert.deepEqual(mentionSaveMessage({ deliveries: [], ambiguous: [] }), {
+      message: "메모를 저장했습니다",
+      tone: "ok"
+    });
+  });
+
+  it("허브 알림 · 메일을 따로 알린다", () => {
+    const { message, tone } = mentionSaveMessage({
+      deliveries: [
+        { id: "u1", name: "가", hub: "ok", email: "ok" },
+        { id: "u2", name: "나", hub: "ok", email: "failed" },
+        { id: "u3", name: "다", hub: "failed", email: "skipped", skipReason: "not_company" }
+      ],
+      ambiguous: ["김민수"]
+    });
+    assert.equal(tone, "warn");
+    assert.match(message, /허브 알림 보냄: 가, 나/);
+    assert.match(message, /허브 알림 실패: 다/);
+    assert.match(message, /메일 보냄: 가/);
+    assert.match(message, /메일 실패: 나/);
+    assert.match(message, /메일은 안 보냄: 다/);
+    assert.match(message, /@김민수/);
+    assert.ok(!message.includes(String.fromCharCode(0x2014)));
+  });
+});
+
+describe("첨부 id", () => {
+  const items = [
+    { id: "f1", name: "a.pdf", size: 1, url: "u1" },
+    { id: "f2", name: "a.pdf", size: 2, url: "u2" }
+  ];
+
+  it("id 로 key 와 다시 찾기", () => {
+    assert.equal(inquiryFileKey(items[1], 1), "id:f2");
+    assert.equal(findInquiryFile(items, { id: "f2", name: "a.pdf", index: 0 })?.url, "u2");
+  });
+
+  it("id 가 없으면 이름 + 순서", () => {
+    const old = [
+      { name: "a.pdf", size: 1, url: "u1" },
+      { name: "a.pdf", size: 2, url: "u2" }
+    ];
+    assert.equal(inquiryFileKey(old[1], 1), "name:a.pdf#1");
+    assert.equal(findInquiryFile(old, { name: "a.pdf", index: 1 })?.url, "u2");
+    assert.equal(findInquiryFile([old[1]], { name: "a.pdf", index: 1 })?.url, "u2");
+  });
+});
+
+describe("customerTextOf", () => {
+  it("구역은 있는데 text 가 없으면 message", () => {
+    const item = row({ sections: [{ title: "프로젝트", rows: [] }], message: "본문" });
+    assert.equal(customerTextOf(item), "본문");
+    assert.equal(customerTextOf({ ...item, text: "고객 글" }), "고객 글");
   });
 });
 

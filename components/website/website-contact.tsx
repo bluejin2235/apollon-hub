@@ -24,12 +24,17 @@ import {
   INQUIRY_FILTERS,
   INQUIRY_STATUS_LABEL,
   budgetLabel,
+  customerTextOf,
   fileSizeLabel,
+  findInquiryFile,
+  inquiryFileKey,
   inquiryStatus,
   inquiryTitle,
   isLetsTalkInquiry,
-  mentionedMemberNames,
+  mentionSaveMessage,
+  resolveNewMentions,
   timelineLabel,
+  type InquiryFile,
   type InquiryFiles,
   type InquiryFilter,
   type InquiryItem,
@@ -206,20 +211,23 @@ function InquiryAttachments({ id }: { id: string }) {
     void load();
   }, [load]);
 
-  async function download(name: string) {
+  async function download(file: InquiryFile, index: number) {
+    const key = inquiryFileKey(file, index);
     // 주소를 받는 사이 팝업 차단에 걸리지 않게, 누른 순간 빈 창을 먼저 연다
     const win = window.open("about:blank", "_blank");
     if (win) win.opener = null;
-    setBusy(name);
+    setBusy(key);
     const result = await getInquiryFiles(id);
     setBusy(null);
     if (result.ok) setFiles(result.data);
-    const url = result.ok ? result.data.items.find((file) => file.name === name)?.url : null;
+    const url = result.ok
+      ? findInquiryFile(result.data.items, { id: file.id, name: file.name, index })?.url
+      : null;
     if (!url) {
       win?.close();
       showToast({
         message: result.ok
-          ? `「${name}」 파일을 찾지 못했습니다. 홈페이지 저장소를 확인해 주세요`
+          ? `「${file.name}」 파일을 찾지 못했습니다. 홈페이지 저장소를 확인해 주세요`
           : "내려받기 주소를 받지 못했습니다. 잠시 뒤 다시 눌러 주세요",
         tone: "error",
         durationMs: 6000
@@ -259,24 +267,27 @@ function InquiryAttachments({ id }: { id: string }) {
     <div className="space-y-2">
       {files.items.length > 0 ? (
         <ul>
-          {files.items.map((file) => (
-            <li
-              key={file.name}
-              className="flex items-center justify-between gap-3 border-b border-[#ccc] py-2 text-sm"
-            >
-              <span className="min-w-0 truncate text-slate-900">
-                {file.name} <span className="text-slate-400">{fileSizeLabel(file.size)}</span>
-              </span>
-              <button
-                type="button"
-                disabled={busy === file.name}
-                className="shrink-0 rounded-md border border-slate-900 px-3 py-1 text-xs font-medium text-slate-900 hover:bg-slate-900 hover:text-white disabled:opacity-50"
-                onClick={() => void download(file.name)}
+          {files.items.map((file, index) => {
+            const key = inquiryFileKey(file, index);
+            return (
+              <li
+                key={key}
+                className="flex items-center justify-between gap-3 border-b border-[#ccc] py-2 text-sm"
               >
-                {busy === file.name ? "여는 중…" : "내려받기"}
-              </button>
-            </li>
-          ))}
+                <span className="min-w-0 truncate text-slate-900">
+                  {file.name} <span className="text-slate-400">{fileSizeLabel(file.size)}</span>
+                </span>
+                <button
+                  type="button"
+                  disabled={busy === key}
+                  className="shrink-0 rounded-md border border-slate-900 px-3 py-1 text-xs font-medium text-slate-900 hover:bg-slate-900 hover:text-white disabled:opacity-50"
+                  onClick={() => void download(file, index)}
+                >
+                  {busy === key ? "여는 중…" : "내려받기"}
+                </button>
+              </li>
+            );
+          })}
         </ul>
       ) : null}
       {files.missing.length > 0 ? (
@@ -307,13 +318,18 @@ function MemoBox({
   const [saving, setSaving] = useState(false);
   const [query, setQuery] = useState<string | null>(null);
   const [active, setActive] = useState(0);
+  /** 마지막 저장 뒤 목록에서 고른 사람 id (같은 이름이 여럿이어도 고른 사람만 부른다) */
+  const [picked, setPicked] = useState<string[]>([]);
   const areaRef = useRef<HTMLTextAreaElement>(null);
 
-  const names = useMemo(() => members.map((member) => member.name), [members]);
-  const newlyMentioned = useMemo(() => {
-    const before = new Set(mentionedMemberNames(saved, names));
-    return mentionedMemberNames(memo, names).filter((name) => !before.has(name));
-  }, [memo, saved, names]);
+  const preview = useMemo(() => {
+    const result = resolveNewMentions({ previous: saved, next: memo, members, mentionIds: picked });
+    const byId = new Map(members.map((member) => [member.id, member]));
+    return {
+      names: result.ids.map((id) => byId.get(id)?.name ?? "").filter(Boolean),
+      ambiguous: result.ambiguous
+    };
+  }, [memo, saved, members, picked]);
 
   const options = useMemo(() => {
     if (query === null) return [];
@@ -335,6 +351,7 @@ function MemoBox({
     const head = memo.slice(0, caret).replace(/@([^\s@]*)$/, `@${member.name} `);
     const next = `${head}${memo.slice(caret)}`.slice(0, MEMO_MAX);
     setMemo(next);
+    setPicked((ids) => (ids.includes(member.id) ? ids : [...ids, member.id]));
     setQuery(null);
     requestAnimationFrame(() => {
       el?.focus();
@@ -365,30 +382,24 @@ function MemoBox({
 
   async function save() {
     setSaving(true);
-    const result = await saveInquiryMemo(item.id, memo);
+    const result = await saveInquiryMemo(item.id, memo, picked);
     setSaving(false);
     if (!result.ok) {
-      showToast({ message: "메모를 저장하지 못했습니다. 잠시 뒤 다시 눌러 주세요", tone: "error" });
-      return;
-    }
-    onSaved(result.data.item);
-    const notified = result.data.notified ?? [];
-    const mailFailed = result.data.mailFailed ?? [];
-    if (mailFailed.length > 0) {
       showToast({
-        message: `메모는 저장했지만 ${mailFailed.join(", ")} 님에게 메일을 보내지 못했습니다`,
-        tone: "warn",
+        message:
+          result.error === "mention_lookup_failed"
+            ? "부를 사람 목록을 읽지 못해 메모를 저장하지 않았습니다. 잠시 뒤 다시 눌러 주세요"
+            : "메모를 저장하지 못했습니다. 잠시 뒤 다시 눌러 주세요",
+        tone: "error",
         durationMs: 6000
       });
-    } else if (notified.length > 0) {
-      showToast({
-        message: `메모를 저장하고 ${notified.join(", ")} 님에게 허브 알림과 메일을 보냈습니다`,
-        tone: "ok",
-        durationMs: 5000
-      });
-    } else {
-      showToast({ message: "메모를 저장했습니다", tone: "ok" });
+      return;
     }
+    setPicked([]);
+    onSaved(result.data.item);
+    const { message, tone } = mentionSaveMessage(result.data);
+    const long = (result.data.deliveries ?? []).length > 0 || (result.data.ambiguous ?? []).length > 0;
+    showToast({ message, tone, durationMs: long ? 8000 : undefined });
   }
 
   const dirty = memo !== saved;
@@ -452,11 +463,18 @@ function MemoBox({
         <PrimaryBtn disabled={saving || !dirty} onClick={() => void save()}>
           {saving ? "저장 중…" : "메모 저장"}
         </PrimaryBtn>
-        {newlyMentioned.length > 0 ? (
+        {preview.names.length > 0 ? (
           <span className="text-xs text-slate-600">
-            저장하면 알림이 갈 사람: {newlyMentioned.map((name) => `@${name}`).join(", ")}
+            저장하면 알림이 갈 사람: {preview.names.map((name) => `@${name}`).join(", ")}
           </span>
-        ) : dirty ? (
+        ) : null}
+        {preview.ambiguous.length > 0 ? (
+          <span className="text-xs text-amber-700">
+            같은 이름이 여럿이라 알림이 가지 않습니다:{" "}
+            {preview.ambiguous.map((name) => `@${name}`).join(", ")}. 목록에서 골라 주세요
+          </span>
+        ) : null}
+        {preview.names.length === 0 && preview.ambiguous.length === 0 && dirty ? (
           <span className="text-xs text-amber-700">저장하지 않은 메모가 있습니다</span>
         ) : null}
       </div>
@@ -557,7 +575,7 @@ function InquiryDetail({
         <>
           <InquirySections sections={item.sections ?? []} />
           <SectionBlock title="문의 내용">
-            <CustomerText value={item.text} />
+            <CustomerText value={customerTextOf(item)} />
           </SectionBlock>
         </>
       ) : (
@@ -637,11 +655,28 @@ function InboxTab() {
     });
   }, []);
 
+  // 지금 열린 문의 id 와 그 요청. 다른 문의를 열거나 닫으면 앞 요청을 끊고, 늦게 온 응답은 버린다.
+  const openIdRef = useRef<string | null>(null);
+  const openAbortRef = useRef<AbortController | null>(null);
+
+  /** 열린 문의와 같은 id 일 때만 상세를 바꾼다 */
+  const applyIfOpen = useCallback((row: InquiryItem) => {
+    if (openIdRef.current !== row.id) return;
+    setSelected((current) => (current && current.id === row.id ? mergeInquiry(current, row) : row));
+  }, []);
+
   const openById = useCallback(
     async (id: string, fallback?: InquiryItem) => {
+      openAbortRef.current?.abort();
+      const controller = new AbortController();
+      openAbortRef.current = controller;
+      openIdRef.current = id;
+      const isCurrent = () => openIdRef.current === id && !controller.signal.aborted;
+
       if (fallback) setSelected(fallback);
       syncUrlId(id);
-      const detail = await getInquiry(id);
+      const detail = await getInquiry(id, controller.signal);
+      if (!isCurrent()) return;
       if (!detail.ok) {
         if (!fallback) {
           showToast({ message: "링크의 문의를 찾지 못했습니다", tone: "error" });
@@ -650,15 +685,22 @@ function InboxTab() {
         return;
       }
       const row = detail.data;
-      setSelected((current) => mergeInquiry(current, row));
+      applyIfOpen(row);
       if (row.is_read) return;
-      const marked = await updateInquiry(id, { is_read: true });
-      if (!marked.ok) return;
-      const readRow = marked.data;
-      setSelected((current) => mergeInquiry(current, readRow));
+      const marked = await updateInquiry(id, { is_read: true }, controller.signal);
+      if (!isCurrent() || !marked.ok) return;
+      applyIfOpen(marked.data);
       await load();
     },
-    [load]
+    [load, applyIfOpen]
+  );
+
+  // 화면을 떠나면 남은 요청을 끊는다
+  useEffect(
+    () => () => {
+      openAbortRef.current?.abort();
+    },
+    []
   );
 
   // 메일 · 허브 알림 링크(?id=)로 들어오면 그 문의를 연다 (처음 한 번)
@@ -679,6 +721,9 @@ function InboxTab() {
   }
 
   function closeDetail() {
+    openAbortRef.current?.abort();
+    openAbortRef.current = null;
+    openIdRef.current = null;
     setSelected(null);
     syncUrlId(null);
   }
@@ -735,7 +780,7 @@ function InboxTab() {
               members={members}
               membersFailed={membersFailed}
               onChanged={(row) => {
-                setSelected((current) => mergeInquiry(current, row));
+                applyIfOpen(row);
                 void load();
               }}
               onClose={closeDetail}
