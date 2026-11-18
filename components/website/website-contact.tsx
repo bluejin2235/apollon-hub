@@ -373,6 +373,7 @@ function MemoBox({
   }
 
   function pick(member: MentionMember) {
+    if (saving || !isReady) return;
     const el = areaRef.current;
     const caret = el?.selectionStart ?? memo.length;
     const head = memo.slice(0, caret).replace(/@([^\s@]*)$/, `@${member.name} `);
@@ -527,7 +528,7 @@ function InquiryDetail({
   members: MentionMember[];
   membersState: LoadState;
   memoReady: DetailState;
-  onChanged: (row: InquiryItem) => void;
+  onChanged: (row: InquiryItem, keepMemo?: boolean) => void;
   onClose: () => void;
 }) {
   const [saving, setSaving] = useState(false);
@@ -545,7 +546,7 @@ function InquiryDetail({
       showToast({ message: "상태를 바꾸지 못했습니다", tone: "error" });
       return;
     }
-    onChanged(result.data);
+    onChanged(result.data, true);
     showToast({ message: done ? "처리 완료로 옮겼습니다" : "미처리로 되돌렸습니다", tone: "ok" });
   }
 
@@ -745,9 +746,12 @@ function InboxTab() {
   const openAbortRef = useRef<AbortController | null>(null);
 
   /** 열린 문의와 같은 id 일 때만 상세를 바꾼다 */
-  const applyIfOpen = useCallback((row: InquiryItem) => {
+  const applyIfOpen = useCallback((row: InquiryItem, keepMemo = false) => {
     if (openIdRef.current !== row.id) return;
-    setSelected((current) => (current && current.id === row.id ? mergeInquiry(current, row) : row));
+    // 읽음 · 처리 상태 응답은 메모를 바꾸지 않는다(늦게 온 옛 메모가 방금 저장한 메모를 덮지 않게, 코덱스 18차)
+    setSelected((current) =>
+      current && current.id === row.id ? mergeInquiry(current, keepMemo ? { ...row, memo: current.memo } : row) : row
+    );
   }, []);
 
   const openById = useCallback(
@@ -777,7 +781,7 @@ function InboxTab() {
       if (row.is_read) return;
       const marked = await updateInquiry(id, { is_read: true }, controller.signal);
       if (!isCurrent() || !marked.ok) return;
-      applyIfOpen(marked.data);
+      applyIfOpen(marked.data, true);
       // 읽음 저장이 됐으면 목록의 읽음 표시 · 안 읽은 수를 바로 바꾼다. 아래 새로 고침이 실패해도 옛 표시로 남지 않게
       setData((list) => applyInquiryToList(list, marked.data));
       await load();
@@ -871,8 +875,8 @@ function InboxTab() {
               members={members}
               membersState={membersState}
               memoReady={detailState?.id === selected.id ? detailState.state : "ready"}
-              onChanged={(row) => {
-                applyIfOpen(row);
+              onChanged={(row, keepMemo) => {
+                applyIfOpen(row, keepMemo);
                 setData((list) => applyInquiryToList(list, row));
                 void load();
               }}
