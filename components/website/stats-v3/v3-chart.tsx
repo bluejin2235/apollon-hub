@@ -327,6 +327,18 @@ export function prevMissingText(reason: string | null, fallback: string): string
   return `앞 기간 자료 없음 (${reason})`;
 }
 
+/**
+ * 앞 기간 선이 하나도 없을 때 범례 글. 마우스 상자와 같은 상태를 쓴다.
+ * 어느 점이라도 받는 중이면 「앞 기간 불러오는 중」, 받지 못한 점이 있으면 「앞 기간 자료를 받지 못함」,
+ * 자료가 준비됐는데 정말 없을 때만 「앞 기간 선 없음」.
+ */
+export function prevLegendText(reason: PrevReason | undefined, count: number): string {
+  const reasons = Array.from({ length: Math.max(1, count) }, (_, i) => reasonAt(reason, i));
+  if (reasons.includes(PREV_REASON.loading)) return PREV_REASON.loading;
+  if (reasons.includes(PREV_REASON.failed)) return PREV_REASON.failed;
+  return "앞 기간 선 없음";
+}
+
 export type LineChartProps = {
   /** 점마다 가로축 글자 */
   labels: string[];
@@ -420,7 +432,7 @@ export function LineChart(props: LineChartProps) {
             앞 기간
           </span>
         ) : (
-          <span className="v3-muted">앞 기간 선 없음</span>
+          <span className="v3-muted">{prevLegendText(prevReason, current.length)}</span>
         )}
       </div>
     </>

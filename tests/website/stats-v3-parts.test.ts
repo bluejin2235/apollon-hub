@@ -20,7 +20,7 @@ import {
   TrendCard,
   type SourceState
 } from "../../components/website/stats-v3/v3-parts";
-import { prevMissingText } from "../../components/website/stats-v3/v3-chart";
+import { prevLegendText, prevMissingText } from "../../components/website/stats-v3/v3-chart";
 import { PREV_REASON } from "../../components/website/stats-v3/v3-data";
 import { listCountText } from "../../components/website/stats-v3/v3-keywords-data";
 
@@ -97,5 +97,15 @@ describe("그래프 상자 · 설정 목록 수", () => {
     assert.equal(listCountText(null, 0), null);
     assert.equal(listCountText([], 0), "0");
     assert.equal(listCountText([1, 2], 2), "2");
+  });
+});
+
+describe("앞 기간 범례", () => {
+  it("앞 기간 선이 없을 때 범례도 상자와 같은 상태: 불러오는 중 · 받지 못함 · 정말 없음", () => {
+    assert.equal(prevLegendText([PREV_REASON.loading, PREV_REASON.loading], 2), "앞 기간 불러오는 중");
+    assert.equal(prevLegendText([PREV_REASON.outside, PREV_REASON.failed], 2), "앞 기간 자료를 받지 못함");
+    assert.equal(prevLegendText([PREV_REASON.noData, PREV_REASON.outside], 2), "앞 기간 선 없음");
+    assert.equal(prevLegendText(undefined, 3), "앞 기간 선 없음");
+    assert.equal(prevLegendText(PREV_REASON.loading, 3), "앞 기간 불러오는 중");
   });
 });

@@ -627,6 +627,11 @@ function InboxTab() {
   const [listState, setListState] = useState<LoadState>("loading");
   /** 목록 요청 번호. 늦게 온 옛 요청의 응답이 최신 결과를 덮지 않게 마지막 번호의 응답만 쓴다 */
   const listSeq = useRef(0);
+  /**
+   * 지금 검색 · 거르기 조건. 목록 요청은 보내는 순간 이 값을 읽는다.
+   * 읽음 표시 · 메모 저장 뒤 새로 고침이 그 일을 시작한 때의 옛 조건으로 받아 최신 목록을 덮지 않게 한다
+   */
+  const criteriaRef = useRef<{ q: string; filter: InquiryFilter }>({ q, filter });
   const [members, setMembers] = useState<MentionMember[]>([]);
   /** 사람 목록 상태. 빈 목록도 받은 것(ready)이라 길이로 짐작하지 않는다 */
   const [membersState, setMembersState] = useState<LoadState>("loading");
@@ -644,9 +649,10 @@ function InboxTab() {
         setData(null);
         setListState("loading");
       }
+      const criteria = criteriaRef.current;
       let result: Awaited<ReturnType<typeof listInquiries>>;
       try {
-        result = await listInquiries({ q: q.trim() || undefined, filter });
+        result = await listInquiries({ q: criteria.q.trim() || undefined, filter: criteria.filter });
       } catch {
         result = { ok: false, error: "network_error", status: 0 };
       }
@@ -667,12 +673,14 @@ function InboxTab() {
       if (fresh) setListState("error");
       else setListState((state) => (state === "ready" ? state : "error"));
     },
-    [q, filter]
+    []
   );
 
+  // 조건이 바뀌면 지금 조건을 먼저 적어 두고 새로 받는다
   useEffect(() => {
+    criteriaRef.current = { q, filter };
     void load(true);
-  }, [load]);
+  }, [q, filter, load]);
 
   useEffect(() => {
     void listMentionMembers().then(
