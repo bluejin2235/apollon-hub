@@ -167,3 +167,66 @@ describe("목표 키워드 표", () => {
     assert.equal(targetKeywordsView({}, EMPTY_TITLES).payload, null);
   });
 });
+
+import { answerView } from "../../components/website/stats-v3/v3-answer-data";
+import type { AiAnswerSummary } from "../../lib/website/stats";
+
+describe("AI ② 답에 씀", () => {
+  const count = (mentioned: number, checked: number) => ({
+    mentioned,
+    checked,
+    previous: null,
+    diff_pp: null,
+    diff_count: null
+  });
+  const summary: AiAnswerSummary = {
+    rounds: [{ checked_on: "2026-11-17", services: ["chatgpt", "google_ai_overview"], checks: 4 }],
+    latest: "2026-11-17",
+    previous: "2026-11-10",
+    total: count(3, 4),
+    services: [
+      { ...count(2, 2), ai_service: "chatgpt", label: "ChatGPT" },
+      { ...count(1, 2), ai_service: "google_ai_overview", label: "구글 AI 개요" }
+    ],
+    grid: [
+      {
+        question_id: 1,
+        question: "미디어파사드 회사",
+        group: "A",
+        cells: {
+          chatgpt: { mentioned: true, previous: false, changed: true },
+          google_ai_overview: { mentioned: true, previous: true, changed: false }
+        },
+        changed: true
+      },
+      {
+        question_id: 2,
+        question: "미디어 아키텍처가 뭐야?",
+        group: "A",
+        cells: {
+          chatgpt: { mentioned: true, previous: true, changed: false },
+          google_ai_overview: { mentioned: false, previous: false, changed: false }
+        },
+        changed: false
+      }
+    ],
+    cited_top: [{ url: "https://www.apollonworks.com/expertise", count: 2 }],
+    wrong_facts: []
+  };
+
+  it("질문 단위 언급 수와 앞 회차를 센다", () => {
+    const view = answerView(summary);
+    assert.ok(view);
+    assert.equal(view.questionsMentioned, 2);
+    assert.equal(view.questionsChecked, 2);
+    assert.equal(view.questionsMentionedBefore, 2);
+    assert.equal(view.rows[0].id, 1);
+    assert.equal(view.rows[0].diff, 1);
+    assert.ok(view.columns.includes("ChatGPT"));
+  });
+
+  it("기록이 없으면 null", () => {
+    assert.equal(answerView(null), null);
+    assert.equal(answerView({ ...summary, latest: null }), null);
+  });
+});

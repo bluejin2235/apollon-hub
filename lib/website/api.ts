@@ -15,6 +15,7 @@ import {
   type StatsBundleResult,
   type StatsQueryResult,
   type StatsRealtime,
+  type AiAnswerSummary,
   type TargetKeywordItem
 } from "@/lib/website/stats";
 import type {
@@ -1317,6 +1318,16 @@ export function updateStatsAction(
 
 export function deleteStatsAction(id: string): Promise<ApiResult<{ id: string }>> {
   return websiteFetch<{ id: string }>(`stats/actions/${id}`, { method: "DELETE" });
+}
+
+/** AI ② 「답에 씀」 — 기간 안 회차 요약. 표가 아직 없으면 홈페이지가 오류를 돌려준다 */
+export function getAiAnswerSummary(params: {
+  from: string;
+  to: string;
+  signal?: AbortSignal;
+}): Promise<ApiResult<AiAnswerSummary>> {
+  const { from, to, signal } = params;
+  return websiteFetch<AiAnswerSummary>(`stats/ai-answers${queryString({ from, to })}`, { signal });
 }
 
 /** 목표 키워드(3-8) — 보이는 것 + 내린 것 전부 */

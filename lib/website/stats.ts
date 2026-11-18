@@ -70,6 +70,32 @@ export type TargetKeywordsPayload = {
   }[];
 };
 
+/** AI ② 「답에 씀」 요약 — 홈페이지 lib/stats/ai-answers.ts AiAnswerSummary 와 같은 모양 */
+export type AiAnswerCount = {
+  mentioned: number;
+  checked: number;
+  previous: { mentioned: number; checked: number } | null;
+  diff_pp: number | null;
+  diff_count: number | null;
+};
+
+export type AiAnswerSummary = {
+  rounds: { checked_on: string; services: string[]; checks: number }[];
+  latest: string | null;
+  previous: string | null;
+  total: AiAnswerCount;
+  services: (AiAnswerCount & { ai_service: string; label: string })[];
+  grid: {
+    question_id: number;
+    question: string;
+    group: string;
+    cells: Record<string, { mentioned: boolean; previous: boolean | null; changed: boolean } | undefined>;
+    changed: boolean;
+  }[];
+  cited_top: { url: string; count: number }[];
+  wrong_facts: { question_id: number; question: string; ai_service: string; label: string; note: string | null }[];
+};
+
 /** 목표 키워드 설정 화면 한 줄(관리 API) */
 export type TargetKeywordItem = {
   id: number;
