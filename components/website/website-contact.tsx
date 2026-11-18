@@ -305,27 +305,33 @@ function InquiryAttachments({ id }: { id: string }) {
   );
 }
 
+/** 열린 문의의 상세(저장 메모 포함)를 받았는지 */
+type DetailState = "loading" | "ready" | "failed";
+
 /** 내부 메모 + @ 로 사람 부르기 */
 function MemoBox({
   item,
   members,
   membersState,
+  ready,
   onSaved
 }: {
   item: InquiryItem;
   members: MentionMember[];
   membersState: LoadState;
+  /** 상세에서 저장 메모를 받았는지 */
+  ready: DetailState;
   onSaved: (row: InquiryItem) => void;
 }) {
   const saved = item.memo ?? "";
   const [memo, setMemo] = useState(saved);
-  // 목록 행으로 먼저 열면 메모가 늦게 온다. 아직 고치지 않았으면 늦게 온 저장 메모로 바꾼다(빈 칸을 보고 덮어쓰지 않게, 코덱스 12차)
-  const baseRef = useRef(saved);
+  // 목록 행으로 먼저 열면 저장 메모가 상세로 늦게 온다. 받기 전에는 칸과 저장을 잠그고, 받으면 저장 메모로 채운다
+  // (빈 칸이나 옛 값을 보고 기존 메모를 덮어쓰지 않게, 코덱스 12·13차)
+  const isReady = ready === "ready";
   useEffect(() => {
-    if (baseRef.current === saved) return;
-    setMemo((current) => (current === baseRef.current ? saved : current));
-    baseRef.current = saved;
-  }, [saved]);
+    if (isReady) setMemo(item.memo ?? "");
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 받은 순간에 한 번만 채운다
+  }, [isReady]);
   const [saving, setSaving] = useState(false);
   const [query, setQuery] = useState<string | null>(null);
   const [active, setActive] = useState(0);
@@ -420,6 +426,10 @@ function MemoBox({
       <p className="mb-2 text-xs text-slate-500">
         @로 사람을 고르면 그 사람에게 허브 알림과 메일이 갑니다. 문의한 고객에게는 보이지 않습니다.
       </p>
+      {ready === "loading" ? <p className="mb-2 text-xs text-slate-400">저장된 메모를 불러오는 중입니다.</p> : null}
+      {ready === "failed" ? (
+        <p className="mb-2 text-xs text-red-600">저장된 메모를 불러오지 못했습니다. 목록에서 문의를 다시 눌러 주세요.</p>
+      ) : null}
       <div className="relative">
         <textarea
           ref={areaRef}
@@ -427,6 +437,7 @@ function MemoBox({
           className="min-h-[96px] w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
           placeholder="예: @이름 견적 범위 같이 봐 주세요"
           value={memo}
+          disabled={!isReady}
           maxLength={MEMO_MAX}
           onChange={(event) => {
             setMemo(event.target.value);
@@ -471,7 +482,7 @@ function MemoBox({
         ) : null}
       </div>
       <div className="mt-3 flex flex-wrap items-center gap-3">
-        <PrimaryBtn disabled={saving || !dirty} onClick={() => void save()}>
+        <PrimaryBtn disabled={saving || !dirty || !isReady} onClick={() => void save()}>
           {saving ? "저장 중…" : "메모 저장"}
         </PrimaryBtn>
         {preview.names.length > 0 ? (
@@ -497,12 +508,14 @@ function InquiryDetail({
   item,
   members,
   membersState,
+  memoReady,
   onChanged,
   onClose
 }: {
   item: InquiryItem;
   members: MentionMember[];
   membersState: LoadState;
+  memoReady: DetailState;
   onChanged: (row: InquiryItem) => void;
   onClose: () => void;
 }) {
@@ -620,6 +633,7 @@ function InquiryDetail({
         item={item}
         members={members}
         membersState={membersState}
+        ready={memoReady}
         onSaved={onChanged}
       />
     </div>
@@ -631,6 +645,7 @@ function InboxTab() {
   const [filter, setFilter] = useState<InquiryFilter>("all");
   const [data, setData] = useState<InquiryList | null>(null);
   const [selected, setSelected] = useState<InquiryItem | null>(null);
+  const [detailState, setDetailState] = useState<{ id: string; state: DetailState } | null>(null);
   /** 지금 검색 · 거르기 조건의 목록 상태 */
   const [listState, setListState] = useState<LoadState>("loading");
   /** 목록을 보이고 있는데 새로 고침이 실패했나. 알림 한 번(toast)으로 끝내지 않고 목록 위에 남긴다 */
@@ -733,10 +748,12 @@ function InboxTab() {
       const isCurrent = () => openIdRef.current === id && !controller.signal.aborted;
 
       if (fallback) setSelected(fallback);
+      setDetailState({ id, state: "loading" });
       syncUrlId(id);
       const detail = await getInquiry(id, controller.signal);
       if (!isCurrent()) return;
       if (!detail.ok) {
+        setDetailState({ id, state: "failed" });
         if (!fallback) {
           showToast({ message: "링크의 문의를 찾지 못했습니다", tone: "error" });
           syncUrlId(null);
@@ -745,6 +762,7 @@ function InboxTab() {
       }
       const row = detail.data;
       applyIfOpen(row);
+      setDetailState({ id, state: "ready" });
       if (row.is_read) return;
       const marked = await updateInquiry(id, { is_read: true }, controller.signal);
       if (!isCurrent() || !marked.ok) return;
@@ -841,6 +859,7 @@ function InboxTab() {
               item={selected}
               members={members}
               membersState={membersState}
+              memoReady={detailState?.id === selected.id ? detailState.state : "ready"}
               onChanged={(row) => {
                 applyIfOpen(row);
                 setData((list) => applyInquiryToList(list, row));
