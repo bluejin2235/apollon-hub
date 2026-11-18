@@ -5,6 +5,7 @@
  * 지우지 않고 내린다. 여러 줄 붙여 넣기로 한 번에 넣는다.
  */
 
+import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 
 import { normalizeKeyword } from "@/components/website/stats-v3/v3-keywords-data";
@@ -298,9 +299,9 @@ export function V3KeywordsSettings() {
           <h2>
             보이는 키워드 {active.length}개 / 목표 {GOAL}
           </h2>
-          <a className="v3-tiny" href="/website/stats/search">
+          <Link className="v3-tiny" href="/website/stats/search">
             검색 화면에서 순위 보기 →
-          </a>
+          </Link>
         </div>
         {active.length > GOAL ? <p className="v3-note">{GOAL}개를 넘었습니다. 넘어도 저장은 됩니다.</p> : null}
         <div className="v3-chips">

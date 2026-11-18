@@ -5,6 +5,7 @@
  * 목표 키워드 표는 target_keywords(3-8), 들어온 페이지는 query_page(3-5). 자료가 오기 전 응답이면 「준비 중」.
  */
 
+import Link from "next/link";
 import { useMemo } from "react";
 
 import { readActualRange } from "@/components/website/stats/stats-data";
@@ -64,15 +65,15 @@ function TargetKeywords({ view, status }: { view: TargetKeywordsView; status: V3
               : "목표 키워드 목록을 아직 읽지 못했습니다"}
           </p>
         </div>
-        <a className="v3-tiny" href="/website/stats/keywords">
+        <Link className="v3-tiny" href="/website/stats/keywords">
           목표 키워드 설정 →
-        </a>
+        </Link>
       </div>
       {status !== "ready" ? (
         <StatusLine status={status} />
       ) : payload && payload.total === 0 ? (
         <p className="v3-tiny">
-          목표 키워드가 아직 없습니다. <a href="/website/stats/keywords">설정에서 넣어 주세요 →</a>
+          목표 키워드가 아직 없습니다. <Link href="/website/stats/keywords">설정에서 넣어 주세요 →</Link>
         </p>
       ) : (
         <div className="v3-table-wrap">
