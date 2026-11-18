@@ -42,7 +42,7 @@ function notReadyShort(state: SourceState): string {
   return state === "error" ? "불러오지 못함" : "불러오는 중";
 }
 
-/** 빈 글 한 줄 — 자료가 준비됐을 때만 children, 아니면 불러오는 중 · 실패 */
+/** 빈 글 한 줄: 자료가 준비됐을 때만 children, 아니면 불러오는 중 · 실패 */
 export function EmptyText({ children, className = "v3-tiny" }: { children: ReactNode; className?: string }) {
   const state = useSourceState();
   if (state === "loading") return <p className={className}>{LOADING_TEXT}</p>;
@@ -50,7 +50,7 @@ export function EmptyText({ children, className = "v3-tiny" }: { children: React
   return <p className={className}>{children}</p>;
 }
 
-/** 「비교 불가」 배지 — 자료가 준비됐을 때만. 아니면 「불러오는 중」 · 「불러오지 못함」 */
+/** 「비교 불가」 배지: 자료가 준비됐을 때만. 아니면 「불러오는 중」 · 「불러오지 못함」 */
 export function NotComparable({ children = "비교 불가" }: { children?: ReactNode }) {
   const state = useSourceState();
   if (state !== "ready") return <span className="v3-muted">{notReadyShort(state)}</span>;
