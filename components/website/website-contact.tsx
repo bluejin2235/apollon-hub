@@ -1,30 +1,191 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type ReactNode
+} from "react";
 import { showToast } from "@/components/website/toast";
 import { PrimaryBtn } from "@/components/website/work-editor-ui";
-import { getInquiryFiles, listInquiries, updateInquiry } from "@/lib/website/api";
+import {
+  getInquiry,
+  getInquiryFiles,
+  listInquiries,
+  listMentionMembers,
+  saveInquiryMemo,
+  updateInquiry
+} from "@/lib/website/api";
 import { formatDotDate } from "@/lib/website/career";
 import {
   INQUIRY_FILTERS,
+  INQUIRY_STATUS_LABEL,
   budgetLabel,
   fileSizeLabel,
-  messagePreview,
+  inquiryStatus,
+  inquiryTitle,
+  isLetsTalkInquiry,
+  mentionedMemberNames,
   timelineLabel,
   type InquiryFiles,
   type InquiryFilter,
   type InquiryItem,
-  type InquiryList
+  type InquiryList,
+  type InquirySection,
+  type InquiryStatus,
+  type MentionMember
 } from "@/lib/website/contact";
 
 type Tab = "inbox" | "page";
 
-function SummaryCard({ label, value }: { label: string; value: number }) {
+const MEMO_MAX = 2000;
+
+const STATUS_BADGE: Record<InquiryStatus, string> = {
+  unread: "bg-rose-50 text-rose-700 ring-rose-200",
+  pending: "bg-amber-50 text-amber-800 ring-amber-200",
+  done: "bg-slate-100 text-slate-600 ring-slate-200"
+};
+
+/** 목록 · 수정 응답에 없는 상세 값(제목 · 구역 · 본문)은 앞의 값을 지킨다 */
+function mergeInquiry(prev: InquiryItem | null, next: InquiryItem): InquiryItem {
+  if (!prev || prev.id !== next.id) return next;
+  return {
+    ...prev,
+    ...next,
+    title: next.title ?? prev.title,
+    sections: next.sections ?? prev.sections,
+    text: next.text ?? prev.text,
+    receipt_no: next.receipt_no ?? prev.receipt_no
+  };
+}
+
+/** 주소에 ?id= 를 남겨 링크로 같은 문의를 열 수 있게 한다 */
+function syncUrlId(id: string | null) {
+  try {
+    const url = new URL(window.location.href);
+    if (id) url.searchParams.set("id", id);
+    else url.searchParams.delete("id");
+    window.history.replaceState(window.history.state, "", url.toString());
+  } catch {
+    // 주소를 못 바꿔도 화면은 그대로 쓴다
+  }
+}
+
+function StatusBadge({ item }: { item: InquiryItem }) {
+  const status = inquiryStatus(item);
   return (
-    <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
+    <span
+      className={`inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-xs font-medium ring-1 ${STATUS_BADGE[status]}`}
+    >
+      {INQUIRY_STATUS_LABEL[status]}
+    </span>
+  );
+}
+
+function SummaryCard({
+  label,
+  value,
+  active,
+  onClick
+}: {
+  label: string;
+  value: number;
+  active?: boolean;
+  onClick?: () => void;
+}) {
+  const body = (
+    <>
       <p className="text-xs text-slate-500">{label}</p>
       <p className="mt-1 text-2xl font-semibold text-slate-900">{value}</p>
-    </div>
+    </>
+  );
+  if (!onClick) {
+    return <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">{body}</div>;
+  }
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`rounded-xl border bg-white px-4 py-3 text-left hover:border-slate-400 ${
+        active ? "border-slate-900" : "border-slate-200"
+      }`}
+    >
+      {body}
+    </button>
+  );
+}
+
+/** 메일과 같은 구역 제목: 글자 밑에 가는 검은 줄 */
+function SectionBlock({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <section className="mt-6">
+      <h3 className="border-b border-black pb-2 text-sm font-semibold text-slate-900">{title}</h3>
+      <div className="mt-2">{children}</div>
+    </section>
+  );
+}
+
+function SectionValue({ label, value }: { label: string; value: string }) {
+  const text = value?.trim();
+  if (!text) return <span className="text-slate-400">없음</span>;
+  if (label === "이메일" && text.includes("@")) {
+    return (
+      <a className="text-slate-900 underline underline-offset-2" href={`mailto:${text}`}>
+        {text}
+      </a>
+    );
+  }
+  if (label === "전화") {
+    return (
+      <a className="text-slate-900 underline underline-offset-2" href={`tel:${text.replace(/[^\d+]/g, "")}`}>
+        {text}
+      </a>
+    );
+  }
+  return <>{text}</>;
+}
+
+function SectionRows({ rows }: { rows: [string, string][] }) {
+  return (
+    <dl>
+      {rows.map(([label, value], index) => (
+        <div
+          key={`${label}-${index}`}
+          className="grid grid-cols-[96px_minmax(0,1fr)] gap-3 border-b border-[#ccc] py-2 text-sm"
+        >
+          <dt className="text-[#666]">{label}</dt>
+          <dd className="whitespace-pre-wrap break-words text-slate-900">
+            <SectionValue label={label} value={value} />
+          </dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
+function InquirySections({ sections }: { sections: InquirySection[] }) {
+  return (
+    <>
+      {sections.map((section) => (
+        <SectionBlock key={section.title} title={section.title}>
+          <SectionRows rows={section.rows} />
+        </SectionBlock>
+      ))}
+    </>
+  );
+}
+
+function CustomerText({ value }: { value: string | null | undefined }) {
+  if (!value?.trim()) {
+    return <p className="text-sm text-slate-400">고객이 따로 적은 내용이 없습니다</p>;
+  }
+  return (
+    <p className="whitespace-pre-wrap break-words rounded-md bg-[#f5f5f5] px-4 py-3 text-sm leading-relaxed text-slate-900">
+      {value}
+    </p>
   );
 }
 
@@ -32,180 +193,406 @@ function SummaryCard({ label, value }: { label: string; value: number }) {
 function InquiryAttachments({ id }: { id: string }) {
   const [files, setFiles] = useState<InquiryFiles | null>(null);
   const [failed, setFailed] = useState(false);
+  const [busy, setBusy] = useState<string | null>(null);
 
-  useEffect(() => {
-    let alive = true;
-    void getInquiryFiles(id).then((result) => {
-      if (!alive) return;
-      if (result.ok) setFiles(result.data);
-      else setFailed(true);
-    });
-    return () => {
-      alive = false;
-    };
+  const load = useCallback(async () => {
+    setFailed(false);
+    const result = await getInquiryFiles(id);
+    if (result.ok) setFiles(result.data);
+    else setFailed(true);
   }, [id]);
 
-  async function open(name: string) {
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  async function download(name: string) {
+    // 주소를 받는 사이 팝업 차단에 걸리지 않게, 누른 순간 빈 창을 먼저 연다
+    const win = window.open("about:blank", "_blank");
+    if (win) win.opener = null;
+    setBusy(name);
     const result = await getInquiryFiles(id);
+    setBusy(null);
+    if (result.ok) setFiles(result.data);
     const url = result.ok ? result.data.items.find((file) => file.name === name)?.url : null;
     if (!url) {
-      showToast({ message: "첨부를 열지 못했습니다", tone: "error" });
+      win?.close();
+      showToast({
+        message: result.ok
+          ? `「${name}」 파일을 찾지 못했습니다. 홈페이지 저장소를 확인해 주세요`
+          : "내려받기 주소를 받지 못했습니다. 잠시 뒤 다시 눌러 주세요",
+        tone: "error",
+        durationMs: 6000
+      });
       return;
     }
-    window.open(url, "_blank", "noopener");
+    if (win) {
+      win.location.replace(url);
+      return;
+    }
+    showToast({
+      message: "브라우저가 새 창을 막았습니다. 이 사이트의 팝업을 허용한 뒤 다시 눌러 주세요",
+      tone: "warn",
+      durationMs: 6000
+    });
   }
 
-  if (failed) return <p className="text-sm text-red-600">첨부 목록을 읽지 못했습니다</p>;
+  if (failed) {
+    return (
+      <div className="flex items-center gap-3 text-sm">
+        <span className="text-red-600">첨부 목록을 읽지 못했습니다</span>
+        <button
+          type="button"
+          className="rounded-md border border-slate-200 px-2 py-1 text-xs text-slate-700 hover:bg-slate-50"
+          onClick={() => void load()}
+        >
+          다시 읽기
+        </button>
+      </div>
+    );
+  }
   if (!files) return <p className="text-sm text-slate-400">첨부 확인 중…</p>;
   if (files.items.length === 0 && files.missing.length === 0) {
-    return <p className="text-sm text-slate-400">첨부 없음</p>;
+    return <p className="text-sm text-slate-400">고객이 올린 파일이 없습니다</p>;
   }
   return (
     <div className="space-y-2">
       {files.items.length > 0 ? (
-        <ul className="space-y-1">
+        <ul>
           {files.items.map((file) => (
-            <li key={file.name} className="flex items-center justify-between gap-3 text-sm">
-              <span className="truncate text-slate-800">
+            <li
+              key={file.name}
+              className="flex items-center justify-between gap-3 border-b border-[#ccc] py-2 text-sm"
+            >
+              <span className="min-w-0 truncate text-slate-900">
                 {file.name} <span className="text-slate-400">{fileSizeLabel(file.size)}</span>
               </span>
               <button
                 type="button"
-                className="shrink-0 rounded-md border border-slate-200 px-2 py-1 text-xs text-slate-700 hover:bg-slate-50"
-                onClick={() => void open(file.name)}
+                disabled={busy === file.name}
+                className="shrink-0 rounded-md border border-slate-900 px-3 py-1 text-xs font-medium text-slate-900 hover:bg-slate-900 hover:text-white disabled:opacity-50"
+                onClick={() => void download(file.name)}
               >
-                내려받기
+                {busy === file.name ? "여는 중…" : "내려받기"}
               </button>
             </li>
           ))}
         </ul>
       ) : null}
       {files.missing.length > 0 ? (
-        <p className="text-sm text-amber-700">받지 못한 첨부: {files.missing.join(", ")}</p>
+        <div className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800 ring-1 ring-amber-200">
+          <p className="font-medium">고객이 올리다 실패한 파일</p>
+          <p className="mt-0.5 break-words">{files.missing.join(", ")}</p>
+          <p className="mt-1 text-xs text-amber-700">필요하면 고객에게 메일로 다시 받아 주세요.</p>
+        </div>
       ) : null}
     </div>
   );
 }
 
-function InquiryDetail({
+/** 내부 메모 + @ 로 사람 부르기 */
+function MemoBox({
   item,
-  onChanged
+  members,
+  membersFailed,
+  onSaved
 }: {
   item: InquiryItem;
-  onChanged: (row: InquiryItem) => void;
+  members: MentionMember[];
+  membersFailed: boolean;
+  onSaved: (row: InquiryItem) => void;
 }) {
-  const [memo, setMemo] = useState(item.memo ?? "");
+  const saved = item.memo ?? "";
+  const [memo, setMemo] = useState(saved);
   const [saving, setSaving] = useState(false);
+  const [query, setQuery] = useState<string | null>(null);
+  const [active, setActive] = useState(0);
+  const areaRef = useRef<HTMLTextAreaElement>(null);
 
-  useEffect(() => {
-    setMemo(item.memo ?? "");
-  }, [item.id, item.memo]);
+  const names = useMemo(() => members.map((member) => member.name), [members]);
+  const newlyMentioned = useMemo(() => {
+    const before = new Set(mentionedMemberNames(saved, names));
+    return mentionedMemberNames(memo, names).filter((name) => !before.has(name));
+  }, [memo, saved, names]);
 
-  async function saveMemo() {
-    setSaving(true);
-    const result = await updateInquiry(item.id, { memo });
-    setSaving(false);
-    if (!result.ok) {
-      showToast({ message: "메모를 저장하지 못했습니다", tone: "error" });
-      return;
-    }
-    onChanged(result.data);
-    showToast({ message: "메모를 저장했습니다", tone: "ok" });
+  const options = useMemo(() => {
+    if (query === null) return [];
+    const q = query.trim();
+    return members
+      .filter((member) => !q || member.name.includes(q) || (member.team ?? "").includes(q))
+      .slice(0, 8);
+  }, [members, query]);
+
+  function syncPicker(value: string, caret: number) {
+    const match = /(^|\s)@([^\s@]{0,20})$/.exec(value.slice(0, caret));
+    setQuery(match ? match[2] : null);
+    setActive(0);
   }
 
-  async function markReplied() {
+  function pick(member: MentionMember) {
+    const el = areaRef.current;
+    const caret = el?.selectionStart ?? memo.length;
+    const head = memo.slice(0, caret).replace(/@([^\s@]*)$/, `@${member.name} `);
+    const next = `${head}${memo.slice(caret)}`.slice(0, MEMO_MAX);
+    setMemo(next);
+    setQuery(null);
+    requestAnimationFrame(() => {
+      el?.focus();
+      el?.setSelectionRange(head.length, head.length);
+    });
+  }
+
+  function onKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
+    if (query === null) return;
+    if (event.key === "Escape") {
+      event.preventDefault();
+      setQuery(null);
+      return;
+    }
+    if (options.length === 0) return;
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      setActive((index) => (index + 1) % options.length);
+    } else if (event.key === "ArrowUp") {
+      event.preventDefault();
+      setActive((index) => (index - 1 + options.length) % options.length);
+    } else if (event.key === "Enter" || event.key === "Tab") {
+      event.preventDefault();
+      const member = options[active];
+      if (member) pick(member);
+    }
+  }
+
+  async function save() {
     setSaving(true);
-    const result = await updateInquiry(item.id, { replied_at: true, is_read: true });
+    const result = await saveInquiryMemo(item.id, memo);
+    setSaving(false);
+    if (!result.ok) {
+      showToast({ message: "메모를 저장하지 못했습니다. 잠시 뒤 다시 눌러 주세요", tone: "error" });
+      return;
+    }
+    onSaved(result.data.item);
+    const notified = result.data.notified ?? [];
+    const mailFailed = result.data.mailFailed ?? [];
+    if (mailFailed.length > 0) {
+      showToast({
+        message: `메모는 저장했지만 ${mailFailed.join(", ")} 님에게 메일을 보내지 못했습니다`,
+        tone: "warn",
+        durationMs: 6000
+      });
+    } else if (notified.length > 0) {
+      showToast({
+        message: `메모를 저장하고 ${notified.join(", ")} 님에게 허브 알림과 메일을 보냈습니다`,
+        tone: "ok",
+        durationMs: 5000
+      });
+    } else {
+      showToast({ message: "메모를 저장했습니다", tone: "ok" });
+    }
+  }
+
+  const dirty = memo !== saved;
+
+  return (
+    <SectionBlock title="내부 메모">
+      <p className="mb-2 text-xs text-slate-500">
+        @로 사람을 고르면 그 사람에게 허브 알림과 메일이 갑니다. 문의한 고객에게는 보이지 않습니다.
+      </p>
+      <div className="relative">
+        <textarea
+          ref={areaRef}
+          aria-label="내부 메모"
+          className="min-h-[96px] w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+          placeholder="예: @이름 견적 범위 같이 봐 주세요"
+          value={memo}
+          maxLength={MEMO_MAX}
+          onChange={(event) => {
+            setMemo(event.target.value);
+            syncPicker(event.target.value, event.target.selectionStart ?? event.target.value.length);
+          }}
+          onKeyDown={onKeyDown}
+          onClick={(event) =>
+            syncPicker(event.currentTarget.value, event.currentTarget.selectionStart ?? 0)
+          }
+          onBlur={() => setQuery(null)}
+        />
+        {query !== null ? (
+          <div className="absolute left-0 right-0 top-full z-20 mt-1 max-h-64 overflow-y-auto rounded-lg border border-slate-200 bg-white shadow-lg">
+            {membersFailed ? (
+              <p className="px-3 py-2 text-sm text-red-600">사람 목록을 불러오지 못했습니다</p>
+            ) : options.length === 0 ? (
+              <p className="px-3 py-2 text-sm text-slate-400">
+                {members.length === 0 ? "사람 목록을 불러오는 중…" : "맞는 사람이 없습니다"}
+              </p>
+            ) : (
+              <ul role="listbox" aria-label="부를 사람">
+                {options.map((member, index) => (
+                  <li key={member.id} role="option" aria-selected={index === active}>
+                    <button
+                      type="button"
+                      className={`flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-sm ${
+                        index === active ? "bg-slate-100" : "hover:bg-slate-50"
+                      }`}
+                      onMouseDown={(event) => {
+                        event.preventDefault();
+                        pick(member);
+                      }}
+                    >
+                      <span className="font-medium text-slate-900">{member.name}</span>
+                      <span className="text-xs text-slate-500">{member.team ?? "팀 없음"}</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        ) : null}
+      </div>
+      <div className="mt-3 flex flex-wrap items-center gap-3">
+        <PrimaryBtn disabled={saving || !dirty} onClick={() => void save()}>
+          {saving ? "저장 중…" : "메모 저장"}
+        </PrimaryBtn>
+        {newlyMentioned.length > 0 ? (
+          <span className="text-xs text-slate-600">
+            저장하면 알림이 갈 사람: {newlyMentioned.map((name) => `@${name}`).join(", ")}
+          </span>
+        ) : dirty ? (
+          <span className="text-xs text-amber-700">저장하지 않은 메모가 있습니다</span>
+        ) : null}
+      </div>
+    </SectionBlock>
+  );
+}
+
+function InquiryDetail({
+  item,
+  members,
+  membersFailed,
+  onChanged,
+  onClose
+}: {
+  item: InquiryItem;
+  members: MentionMember[];
+  membersFailed: boolean;
+  onChanged: (row: InquiryItem) => void;
+  onClose: () => void;
+}) {
+  const [saving, setSaving] = useState(false);
+  const status = inquiryStatus(item);
+  const structured = Boolean(item.sections && item.sections.length > 0);
+
+  async function setReplied(done: boolean) {
+    setSaving(true);
+    const result = await updateInquiry(
+      item.id,
+      done ? { replied_at: true, is_read: true } : { replied_at: null }
+    );
     setSaving(false);
     if (!result.ok) {
       showToast({ message: "상태를 바꾸지 못했습니다", tone: "error" });
       return;
     }
     onChanged(result.data);
-    showToast({ message: "처리 완료로 표시했습니다", tone: "ok" });
+    showToast({ message: done ? "처리 완료로 옮겼습니다" : "미처리로 되돌렸습니다", tone: "ok" });
   }
 
   const subject = encodeURIComponent(`[아폴론이머시브웍스] ${item.name} 님 문의에 답장드립니다`);
 
   return (
     <div className="rounded-xl border border-slate-200 bg-white p-5">
-      <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h2 className="text-base font-semibold text-slate-900">{item.name}</h2>
-          <p className="mt-1 text-sm text-slate-500">
-            {item.company || "회사 없음"} · {item.email}
-            {item.phone ? ` · ${item.phone}` : ""}
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <a
-            className="inline-flex items-center rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
-            href={`mailto:${item.email}?subject=${subject}`}
-          >
-            메일 쓰기
-          </a>
-          <PrimaryBtn disabled={saving || Boolean(item.replied_at)} onClick={() => void markReplied()}>
-            답장함
-          </PrimaryBtn>
-        </div>
-      </div>
-
-      <dl className="grid gap-3 text-sm sm:grid-cols-2">
-        {item.receipt_no ? (
-          <div className="sm:col-span-2">
-            <dt className="text-slate-500">접수번호</dt>
-            <dd className="mt-0.5 font-mono text-slate-900">{item.receipt_no}</dd>
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <StatusBadge item={item} />
+            <span className="text-xs text-slate-500">받은 날짜 {formatDotDate(item.created_at)}</span>
+            {item.receipt_no ? (
+              <span className="text-xs text-slate-400">접수 {item.receipt_no}</span>
+            ) : null}
           </div>
-        ) : null}
-        <div>
-          <dt className="text-slate-500">받은 날짜</dt>
-          <dd className="mt-0.5 text-slate-900">{formatDotDate(item.created_at)}</dd>
+          <h2 className="mt-2 break-words text-lg font-semibold text-slate-900">
+            {inquiryTitle(item, 80)}
+          </h2>
         </div>
-        <div>
-          <dt className="text-slate-500">처리</dt>
-          <dd className="mt-0.5 text-slate-900">
-            {item.replied_at ? `완료 ${formatDotDate(item.replied_at)}` : item.is_read ? "미처리" : "안 읽음"}
-          </dd>
-        </div>
-        <div>
-          <dt className="text-slate-500">예산</dt>
-          <dd className="mt-0.5 text-slate-900">{budgetLabel(item.budget)}</dd>
-        </div>
-        <div>
-          <dt className="text-slate-500">일정</dt>
-          <dd className="mt-0.5 text-slate-900">{timelineLabel(item.timeline)}</dd>
-        </div>
-      </dl>
-
-      <div className="mt-4">
-        <p className="text-sm text-slate-500">내용</p>
-        <pre className="mt-1 whitespace-pre-wrap font-sans text-sm text-slate-800">
-          {item.message || "—"}
-        </pre>
+        <button
+          type="button"
+          className="shrink-0 rounded-md px-2 py-1 text-sm text-slate-500 hover:bg-slate-100"
+          onClick={onClose}
+        >
+          닫기
+        </button>
       </div>
 
-      {item.receipt_no ? (
-        <div className="mt-4">
-          <p className="mb-1 text-sm text-slate-500">첨부</p>
+      <div className="mt-4 flex flex-wrap items-center gap-2 rounded-lg bg-slate-50 px-3 py-3">
+        <a
+          className="inline-flex items-center rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+          href={`mailto:${item.email}?subject=${subject}`}
+        >
+          메일 쓰기
+        </a>
+        {status === "done" ? (
+          <>
+            <span className="text-sm text-slate-600">
+              {item.replied_at ? `${formatDotDate(item.replied_at)} 처리 완료` : "처리 완료"}
+            </span>
+            <button
+              type="button"
+              disabled={saving}
+              className="rounded-md px-2 py-1 text-xs text-slate-500 underline underline-offset-2 hover:text-slate-800 disabled:opacity-50"
+              onClick={() => void setReplied(false)}
+            >
+              미처리로 되돌리기
+            </button>
+          </>
+        ) : (
+          <>
+            <PrimaryBtn disabled={saving} onClick={() => void setReplied(true)}>
+              답장 완료로 표시
+            </PrimaryBtn>
+            <span className="text-xs text-slate-500">메일로 답장한 뒤 눌러 주세요</span>
+          </>
+        )}
+      </div>
+
+      {structured ? (
+        <>
+          <InquirySections sections={item.sections ?? []} />
+          <SectionBlock title="문의 내용">
+            <CustomerText value={item.text} />
+          </SectionBlock>
+        </>
+      ) : (
+        <>
+          <SectionBlock title="연락처">
+            <SectionRows
+              rows={[
+                ["이름", item.name],
+                ["회사", item.company ?? ""],
+                ["이메일", item.email],
+                ["전화", item.phone ?? ""],
+                ["예산", item.budget ? budgetLabel(item.budget) : ""],
+                ["일정", item.timeline ? timelineLabel(item.timeline) : ""]
+              ]}
+            />
+          </SectionBlock>
+          <SectionBlock title="문의 내용">
+            <CustomerText value={item.message} />
+          </SectionBlock>
+        </>
+      )}
+
+      {isLetsTalkInquiry(item) ? (
+        <SectionBlock title="첨부">
           <InquiryAttachments key={item.id} id={item.id} />
-        </div>
+        </SectionBlock>
       ) : null}
 
-      <label className="mt-5 block">
-        <span className="mb-1 block text-sm font-medium text-slate-700">내부 메모</span>
-        <p className="mb-2 text-xs text-slate-400">문의한 사람에게는 보이지 않습니다</p>
-        <textarea
-          className="min-h-[96px] w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
-          value={memo}
-          onChange={(event) => setMemo(event.target.value)}
-          maxLength={2000}
-        />
-      </label>
-      <div className="mt-3">
-        <PrimaryBtn disabled={saving} onClick={() => void saveMemo()}>
-          메모 저장
-        </PrimaryBtn>
-      </div>
+      <MemoBox
+        key={item.id}
+        item={item}
+        members={members}
+        membersFailed={membersFailed}
+        onSaved={onChanged}
+      />
     </div>
   );
 }
@@ -216,6 +603,10 @@ function InboxTab() {
   const [data, setData] = useState<InquiryList | null>(null);
   const [selected, setSelected] = useState<InquiryItem | null>(null);
   const [loading, setLoading] = useState(true);
+  const [members, setMembers] = useState<MentionMember[]>([]);
+  const [membersFailed, setMembersFailed] = useState(false);
+  const detailRef = useRef<HTMLDivElement>(null);
+  const linkOpened = useRef(false);
 
   const load = useCallback(async () => {
     const result = await listInquiries({
@@ -226,7 +617,8 @@ function InboxTab() {
       setData(result.data);
       setSelected((current) => {
         if (!current) return current;
-        return result.data.items.find((item) => item.id === current.id) ?? current;
+        const row = result.data.items.find((item) => item.id === current.id);
+        return row ? mergeInquiry(current, row) : current;
       });
     } else {
       showToast({ message: "문의를 불러오지 못했습니다", tone: "error" });
@@ -238,98 +630,183 @@ function InboxTab() {
     void load();
   }, [load]);
 
-  async function openRow(row: InquiryItem) {
-    setSelected(row);
-    if (row.is_read) return;
-    const result = await updateInquiry(row.id, { is_read: true });
-    if (!result.ok) return;
-    setSelected(result.data);
-    await load();
+  useEffect(() => {
+    void listMentionMembers().then((result) => {
+      if (result.ok) setMembers(result.data);
+      else setMembersFailed(true);
+    });
+  }, []);
+
+  const openById = useCallback(
+    async (id: string, fallback?: InquiryItem) => {
+      if (fallback) setSelected(fallback);
+      syncUrlId(id);
+      const detail = await getInquiry(id);
+      if (!detail.ok) {
+        if (!fallback) {
+          showToast({ message: "링크의 문의를 찾지 못했습니다", tone: "error" });
+          syncUrlId(null);
+        }
+        return;
+      }
+      const row = detail.data;
+      setSelected((current) => mergeInquiry(current, row));
+      if (row.is_read) return;
+      const marked = await updateInquiry(id, { is_read: true });
+      if (!marked.ok) return;
+      const readRow = marked.data;
+      setSelected((current) => mergeInquiry(current, readRow));
+      await load();
+    },
+    [load]
+  );
+
+  // 메일 · 허브 알림 링크(?id=)로 들어오면 그 문의를 연다 (처음 한 번)
+  useEffect(() => {
+    if (linkOpened.current) return;
+    linkOpened.current = true;
+    const id = new URLSearchParams(window.location.search).get("id");
+    if (id) void openById(id);
+  }, [openById]);
+
+  function openRow(row: InquiryItem) {
+    void openById(row.id, row);
+    if (window.innerWidth < 1024) {
+      requestAnimationFrame(() =>
+        detailRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })
+      );
+    }
   }
+
+  function closeDetail() {
+    setSelected(null);
+    syncUrlId(null);
+  }
+
+  const items = data?.items ?? [];
+  const searching = q.trim().length > 0 || filter !== "all";
 
   return (
     <div className="space-y-5">
       <div className="grid gap-3 sm:grid-cols-3">
-        <SummaryCard label="새 문의" value={data?.summary.unread ?? 0} />
-        <SummaryCard label="이번 달" value={data?.summary.thisMonth ?? 0} />
-        <SummaryCard label="미처리" value={data?.summary.pending ?? 0} />
+        <SummaryCard
+          label="안 읽은 문의"
+          value={data?.summary.unread ?? 0}
+          active={filter === "unread"}
+          onClick={() => setFilter(filter === "unread" ? "all" : "unread")}
+        />
+        <SummaryCard
+          label="답장 기다리는 문의 (미처리)"
+          value={data?.summary.pending ?? 0}
+          active={filter === "pending"}
+          onClick={() => setFilter(filter === "pending" ? "all" : "pending")}
+        />
+        <SummaryCard label="이번 달 들어온 문의" value={data?.summary.thisMonth ?? 0} />
       </div>
-      <div className="flex flex-wrap gap-2">
+
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="flex gap-1 rounded-lg bg-slate-100 p-1">
+          {INQUIRY_FILTERS.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => setFilter(item.id)}
+              className={`rounded-md px-3 py-1.5 text-sm ${
+                filter === item.id ? "bg-white font-medium text-slate-900 shadow-sm" : "text-slate-500"
+              }`}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
         <input
           className="min-w-[200px] flex-1 rounded-lg border border-slate-200 px-3 py-2 text-sm"
-          placeholder="이름 · 회사 · 이메일 · 내용"
+          placeholder="이름 · 회사 · 이메일 · 내용으로 찾기"
           value={q}
           onChange={(event) => setQ(event.target.value)}
         />
-        <select
-          className="rounded-lg border border-slate-200 px-3 py-2 text-sm"
-          value={filter}
-          onChange={(event) => setFilter(event.target.value as InquiryFilter)}
-        >
-          {INQUIRY_FILTERS.map((item) => (
-            <option key={item.id} value={item.id}>
-              {item.label}
-            </option>
-          ))}
-        </select>
       </div>
-      {selected ? (
-        <InquiryDetail
-          item={selected}
-          onChanged={(row) => {
-            setSelected(row);
-            void load();
-          }}
-        />
-      ) : null}
-      <div className="overflow-x-auto rounded-xl border border-slate-200">
-        <table className="min-w-full text-left text-sm">
-          <thead className="bg-slate-50 text-xs text-slate-500">
-            <tr>
-              <th className="w-8 px-3 py-2 font-medium" />
-              <th className="px-3 py-2 font-medium">보낸 사람</th>
-              <th className="px-3 py-2 font-medium">회사</th>
-              <th className="px-3 py-2 font-medium">내용</th>
-              <th className="px-3 py-2 font-medium">받은 날짜</th>
-            </tr>
-          </thead>
-          <tbody>
-            {(data?.items ?? []).map((row) => {
-              const unread = !row.is_read;
-              const active = selected?.id === row.id;
-              return (
-                <tr
-                  key={row.id}
-                  className={`cursor-pointer border-t border-slate-100 ${
-                    active ? "bg-slate-50" : ""
-                  }`}
-                  onClick={() => void openRow(row)}
-                >
-                  <td className="px-3 py-2">
-                    {unread ? (
-                      <span className="block h-1.5 w-1.5 rounded-full bg-rose-600" aria-label="안 읽음" />
-                    ) : null}
-                  </td>
-                  <td className={`px-3 py-2 text-slate-900 ${unread ? "font-semibold" : ""}`}>
-                    {row.name}
-                  </td>
-                  <td className={`px-3 py-2 text-slate-600 ${unread ? "font-semibold" : ""}`}>
-                    {row.company || "—"}
-                  </td>
-                  <td className={`max-w-xs truncate px-3 py-2 text-slate-600 ${unread ? "font-semibold" : ""}`}>
-                    {messagePreview(row.message)}
-                  </td>
-                  <td className="px-3 py-2 text-slate-600">{formatDotDate(row.created_at)}</td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-        {loading ? (
-          <p className="px-3 py-6 text-center text-sm text-slate-400">불러오는 중…</p>
-        ) : data && data.items.length === 0 ? (
-          <p className="px-3 py-6 text-center text-sm text-slate-400">해당하는 문의가 없습니다</p>
-        ) : null}
+
+      <div className="flex flex-col gap-5 lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)] lg:items-start">
+        <div ref={detailRef} className="order-first lg:sticky lg:top-4 lg:order-last">
+          {selected ? (
+            <InquiryDetail
+              item={selected}
+              members={members}
+              membersFailed={membersFailed}
+              onChanged={(row) => {
+                setSelected((current) => mergeInquiry(current, row));
+                void load();
+              }}
+              onClose={closeDetail}
+            />
+          ) : (
+            <div className="hidden rounded-xl border border-dashed border-slate-200 px-4 py-16 text-center text-sm text-slate-400 lg:block">
+              목록에서 문의를 누르면 여기에 내용이 열립니다
+            </div>
+          )}
+        </div>
+
+        <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+          {items.length > 0 ? (
+            <ul>
+              {items.map((row) => {
+                const unread = !row.is_read;
+                const active = selected?.id === row.id;
+                return (
+                  <li key={row.id} className="border-b border-slate-100 last:border-b-0">
+                    <button
+                      type="button"
+                      onClick={() => openRow(row)}
+                      className={`flex w-full items-start gap-3 px-4 py-3 text-left hover:bg-slate-50 ${
+                        active ? "bg-slate-50" : ""
+                      }`}
+                    >
+                      <span
+                        className={`mt-1.5 block h-1.5 w-1.5 shrink-0 rounded-full ${
+                          unread ? "bg-rose-600" : "bg-transparent"
+                        }`}
+                        aria-hidden
+                      />
+                      <span className="min-w-0 flex-1">
+                        <span
+                          className={`block truncate text-sm text-slate-900 ${
+                            unread ? "font-semibold" : "font-medium"
+                          }`}
+                        >
+                          {inquiryTitle(row)}
+                        </span>
+                        <span className="mt-0.5 block truncate text-xs text-slate-500">
+                          {row.name}
+                          {row.company ? ` · ${row.company}` : ""} · {formatDotDate(row.created_at)}
+                        </span>
+                      </span>
+                      <StatusBadge item={row} />
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          ) : loading ? (
+            <p className="px-4 py-10 text-center text-sm text-slate-400">불러오는 중…</p>
+          ) : searching ? (
+            <div className="px-4 py-10 text-center text-sm text-slate-400">
+              <p>조건에 맞는 문의가 없습니다</p>
+              <button
+                type="button"
+                className="mt-2 rounded-md border border-slate-200 px-3 py-1 text-xs text-slate-600 hover:bg-slate-50"
+                onClick={() => {
+                  setQ("");
+                  setFilter("all");
+                }}
+              >
+                조건 지우기
+              </button>
+            </div>
+          ) : (
+            <p className="px-4 py-10 text-center text-sm text-slate-400">아직 들어온 문의가 없습니다</p>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -342,7 +819,9 @@ export function WebsiteContact() {
     <div className="space-y-6">
       <div>
         <h1 className="text-xl font-semibold text-slate-900">Let’s Talk</h1>
-        <p className="mt-1 text-sm text-slate-500">홈페이지로 들어온 문의를 봅니다. 답장은 메일 프로그램에서 합니다.</p>
+        <p className="mt-1 text-sm text-slate-500">
+          홈페이지로 들어온 문의를 봅니다. 답장은 메일 프로그램에서 하고, 보낸 뒤 「답장 완료로 표시」를 누릅니다.
+        </p>
       </div>
       <div className="flex gap-1 border-b border-slate-200">
         <button

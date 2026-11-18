@@ -5,6 +5,8 @@ import type {
   InquiryFilter,
   InquiryItem,
   InquiryList,
+  InquiryMemoResult,
+  MentionMember,
   NewsletterList
 } from "@/lib/website/contact";
 import type { HomeCandidateList, HomeList, HomeSlot, HomeWrite } from "@/lib/website/home";
@@ -51,7 +53,8 @@ async function websiteFetch<T>(
   path: string,
   init?: RequestInit,
   /** whole: data 만 꺼내지 않고 응답 본문 전체를 data 로 돌려준다 */
-  options?: { whole?: boolean }
+  /** hubPath: /api/website 프록시가 아니라 허브 자체 API 주소 그대로 */
+  options?: { whole?: boolean; hubPath?: boolean }
 ): Promise<ApiResult<T>> {
   const controller = new AbortController();
   const incoming = init?.signal;
@@ -78,7 +81,8 @@ async function websiteFetch<T>(
       else incoming.addEventListener("abort", onIncomingAbort, { once: true });
     }
 
-    const res = await fetch(`/api/website/${path.replace(/^\//, "")}`, {
+    const url = options?.hubPath ? path : `/api/website/${path.replace(/^\//, "")}`;
+    const res = await fetch(url, {
       ...init,
       credentials: "include",
       headers,
@@ -1186,6 +1190,20 @@ export function updateInquiry(
     method: "PATCH",
     body: JSON.stringify(body)
   });
+}
+
+/** 메모에서 @ 로 고를 수 있는 허브 사람 (이름 · 팀) */
+export function listMentionMembers(): Promise<ApiResult<MentionMember[]>> {
+  return websiteFetch<MentionMember[]>("/api/website-inquiry-mentions", undefined, { hubPath: true });
+}
+
+/** 내부 메모 저장. 새로 부른 사람에게 허브 알림과 메일을 보낸다. */
+export function saveInquiryMemo(id: string, memo: string): Promise<ApiResult<InquiryMemoResult>> {
+  return websiteFetch<InquiryMemoResult>(
+    "/api/website-inquiry-mentions",
+    { method: "POST", body: JSON.stringify({ inquiryId: id, memo }) },
+    { hubPath: true }
+  );
 }
 
 export function listNewsletter(params?: { q?: string }): Promise<ApiResult<NewsletterList>> {
