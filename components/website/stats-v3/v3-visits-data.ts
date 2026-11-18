@@ -13,6 +13,8 @@ import {
   makeCountDelta,
   makeDelta,
   numText,
+  previousIsOldSite,
+  readActualRange,
   readMetricCompare,
   sumField,
   type DeltaView
@@ -34,6 +36,7 @@ import {
   pagesPerSessionOf,
   pathLang,
   prevGuard,
+  previousByDate,
   ratioDelta,
   visitsOf,
   type When
@@ -118,7 +121,10 @@ export function landingTop(bundle: StatsBundle | null, titles: TitleMap, limit =
 
 export type MiniTrend = { dates: string[]; current: (number | null)[]; previous: (number | null)[] };
 
-/** buildDepthTrend · buildDwellTrend 와 같은 식 — 앞 기간은 같은 순번 날짜 */
+/**
+ * buildDepthTrend · buildDwellTrend 와 같은 값. 앞 기간은 순번이 아니라 비교 날짜(prevDateOf)로 찾는다.
+ * 그 날 앞 기간 행이 없으면 null. 그래프는 끊기고 상자는 「앞 기간 기록 없음」.
+ */
 function trendOf(
   bundle: StatsBundle | null,
   keep: (row: StatsPoint) => boolean,
@@ -126,11 +132,12 @@ function trendOf(
 ): MiniTrend {
   const rows = (when: When) => dayRows(ga4(bundle, "daily", when)).filter(keep);
   const current = rows("current");
-  const previous = prevGuard(bundle)(rows("previous")) ?? [];
+  const previous = new Map((prevGuard(bundle)(rows("previous")) ?? []).map((row) => [row.date, value(row)]));
+  const dates = current.map((row) => row.date);
   return {
-    dates: current.map((row) => row.date),
+    dates,
     current: current.map(value),
-    previous: current.map((_, index) => (previous[index] ? value(previous[index]) : null))
+    previous: previousByDate(bundle, dates, previous)
   };
 }
 
@@ -351,19 +358,30 @@ function exitCounts(rows: StatsPoint[]): Map<string, number> {
 }
 
 /**
+ * 나간 페이지 증감을 낼 수 있나 — 두 기간 모두 모으기 시작한 날(PAGE_EXIT_SINCE) 뒤에 있어야 한다.
+ * 앞 기간이 시작 전 날짜를 품으면 기록한 날 수가 달라 견줄 수 없다. 앞 기간은 이번 기간보다 앞이므로 앞 기간 시작만 보면 된다.
+ */
+export function exitComparable(bundle: StatsBundle | null): boolean {
+  const range = readActualRange(bundle);
+  return range != null && range.prevFrom >= PAGE_EXIT_SINCE && range.actualFrom >= PAGE_EXIT_SINCE;
+}
+
+const EXIT_NONE: DeltaView = { delta: null, tone: "flat", previous: null };
+
+/**
  * 나간 페이지 — 방문이 끝난 페이지 많은 순. 자료가 한 줄도 없으면 rows 는 빈 배열이고 화면은 「모읍니다」를 쓴다.
- * 어림하지 않는다. 앞 기간이 모으기 전이면 증감은 「비교 불가」.
+ * 어림하지 않는다. 두 기간이 모두 모으기 시작한 날 뒤가 아니면 증감은 「비교 불가」(comparable=false).
  */
 export function exitRows(
   bundle: StatsBundle | null,
   titles: TitleMap,
   limit = 8
-): { rows: ExitRow[]; total: number } {
+): { rows: ExitRow[]; total: number; comparable: boolean } {
   const result = bundle?.page_exit;
   const current = exitCounts(result?.current ?? []);
   const total = [...current.values()].reduce((a, b) => a + b, 0);
-  const prevRows = prevGuard(bundle)(result?.previous ?? []);
-  const previous = prevRows && prevRows.length > 0 ? exitCounts(prevRows) : null;
+  const comparable = exitComparable(bundle) && !previousIsOldSite(bundle);
+  const previous = comparable ? exitCounts(result?.previous ?? []) : null;
   const rows = [...current.entries()]
     .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
     .slice(0, limit)
@@ -375,8 +393,8 @@ export function exitRows(
         lang: pathLang(path),
         exits,
         share: total > 0 ? Math.round((exits / total) * 100) : 0,
-        delta: makeCountDelta(exits, before, true, withUnit("회")(intText(before)))
+        delta: before == null ? EXIT_NONE : makeCountDelta(exits, before, true, withUnit("회")(intText(before)))
       };
     });
-  return { rows, total };
+  return { rows, total, comparable };
 }

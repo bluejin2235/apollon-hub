@@ -390,12 +390,17 @@ function Flow({ bundle, status, catalog, today }: Pick<V3ScreenProps, "bundle" |
             ) : (
               <>
                 <p className="v3-tiny">방문이 끝난 페이지 · 전체 {exits.total.toLocaleString("ko-KR")}회 중 몫</p>
+                {exits.comparable ? null : (
+                  <p className="v3-tiny">
+                    <Badge>비교 불가</Badge> · 나간 페이지는 {dayText(PAGE_EXIT_SINCE, year)}부터 모음
+                  </p>
+                )}
                 {exits.rows.map((row) => (
                   <div className="v3-flow-row" key={row.path}>
                     <span>
                       {row.title} <LangBadge lang={row.lang} />
                     </span>
-                    <span />
+                    {exits.comparable ? <Change delta={row.delta} /> : <span />}
                     <b>
                       {row.exits.toLocaleString("ko-KR")}회<small>{row.share}%</small>
                     </b>

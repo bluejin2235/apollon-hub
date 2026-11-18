@@ -4,20 +4,24 @@ import { describe, it } from "node:test";
 import "./stats-env";
 
 import { EMPTY_TITLES } from "../../components/website/stats/content-data";
-import { aiDayBucket, aiDayRanges } from "../../components/website/stats-v3/v3-ai-days";
+import { aiDayBucket, aiDayRanges, bucketRangeText } from "../../components/website/stats-v3/v3-ai-days";
 import { answerView } from "../../components/website/stats-v3/v3-answer-data";
-import { tickIndexes, xPercent } from "../../components/website/stats-v3/v3-chart";
+import { axisLabel, tickIndexes, valueSegments, xPercent } from "../../components/website/stats-v3/v3-chart";
+import { pageDaySeries } from "../../components/website/stats-v3/v3-content-data";
 import { prevDatesOf } from "../../components/website/stats-v3/v3-data";
+import { overviewTrend } from "../../components/website/stats-v3/v3-overview-data";
 import { rangeForPreset, V3_DEFAULT_PRESET } from "../../components/website/stats-v3/v3-period";
 import {
   brandSplitDays,
   gscDaySeries,
   hiddenQueryShare,
+  queryCoverage,
   searchGroups,
-  trimPreviousToGsc
+  targetKeywordDays,
+  trimQueriesToCoverage
 } from "../../components/website/stats-v3/v3-search-data";
 import { trendFact } from "../../components/website/stats-v3/v3-trend";
-import { entryRows, exitRows, PAGE_EXIT_SINCE } from "../../components/website/stats-v3/v3-visits-data";
+import { depthTrend, dwellTrend, entryRows, exitRows, PAGE_EXIT_SINCE } from "../../components/website/stats-v3/v3-visits-data";
 import type { AiAnswerSummary, StatsBundle, StatsPoint } from "../../lib/website/stats";
 
 function point(source: string, kind: string, date: string, extra: Partial<StatsPoint>): StatsPoint {
@@ -145,22 +149,149 @@ describe("검색 날짜별 · 숨긴 검색어 · 늦게 들어온 날", () => {
     assert.deepEqual(series.previous, [1, 0, null]);
   });
 
-  it("회사 이름 · 일반 명사 · 구글이 숨긴 몫은 합계에서 뺀 나머지", () => {
+  it("회사 이름 · 일반 명사 · 구글이 숨긴 몫은 합계에서 뺀 나머지, 검색어 행이 없는 날은 0 이 아니라 null", () => {
     const split = brandSplitDays(bundle, "impressions");
-    assert.deepEqual(split.brand, [3, 0, 0]);
-    assert.deepEqual(split.generic, [0, 2, 0]);
-    assert.deepEqual(split.hidden, [7, 7, 20]);
-    assert.deepEqual(hiddenQueryShare(bundle), { impressions: 39, clicks: 6, listedImpressions: 5, listedClicks: 2 });
+    assert.deepEqual(split.brand, [3, 0, null]);
+    assert.deepEqual(split.generic, [0, 2, null]);
+    // 11월 15일 합계 20 이 통째로 「숨긴 검색어」가 되지 않는다
+    assert.deepEqual(split.hidden, [7, 7, null]);
+    assert.deepEqual(split.missing, ["2026-11-15"]);
+    assert.deepEqual(hiddenQueryShare(bundle), {
+      impressions: 19,
+      clicks: 3,
+      listedImpressions: 5,
+      listedClicks: 2,
+      missing: ["2026-11-15"]
+    });
   });
 
-  it("구글 자료가 11월 15일까지면 앞 기간도 같은 날 수(11월 4~8일)까지만 견준다", () => {
-    const trimmed = trimPreviousToGsc(bundle);
-    assert.deepEqual(
-      trimmed?.query.previous.map((row) => row.date),
-      ["2026-11-04"]
-    );
+  it("검색어 행이 11월 12일까지면 두 기간 모두 앞 2일(11월 11~12일 · 11월 4~5일)만 견준다", () => {
+    assert.deepEqual(queryCoverage(bundle), {
+      from: "2026-11-11",
+      to: "2026-11-12",
+      days: 2,
+      prevFrom: "2026-11-04",
+      prevTo: "2026-11-05"
+    });
+    const trimmed = trimQueriesToCoverage(bundle);
+    assert.deepEqual(trimmed?.query.previous.map((row) => row.date), ["2026-11-04"]);
     // 11월 10일 9클릭이 빠져 회사 이름 클릭 앞 기간은 1
     assert.equal(searchGroups(bundle)?.brand.delta.previous, "1회");
+  });
+
+  it("일별 합계 마지막 날(11월 15일)이 아니라 검색어 행 마지막 날로 자른다", () => {
+    const lagging = {
+      ...bundle,
+      query: result(
+        "query",
+        [query("2026-11-11", "아폴론", 2, 3), query("2026-11-12", "아폴론", 1, 2)],
+        [query("2026-11-04", "아폴론", 1, 1), query("2026-11-06", "아폴론", 5, 5)]
+      )
+    } as unknown as StatsBundle;
+    // 합계 기준(5일)이면 앞 기간 11월 6일 5클릭까지 들어가 6. 검색어 기준(2일)이면 1
+    assert.equal(searchGroups(lagging)?.brand.delta.previous, "1회");
+  });
+
+  it("앞 기간 검색어 행이 더 짧게 끝나면 이번 기간도 그 날 수로 줄인다", () => {
+    const short = {
+      ...bundle,
+      query: result(
+        "query",
+        [query("2026-11-11", "아폴론", 2, 3), query("2026-11-12", "아폴론", 4, 4), query("2026-11-13", "아폴론", 8, 8)],
+        [query("2026-11-04", "아폴론", 1, 1)]
+      )
+    } as unknown as StatsBundle;
+    assert.equal(queryCoverage(short)?.days, 1);
+    assert.equal(searchGroups(short)?.brand.clicks, "2");
+  });
+
+  it("목표 키워드 날짜별도 검색어 행이 없는 날은 null", () => {
+    const withTarget = {
+      ...bundle,
+      target_keywords: { target_keywords: { rows: [{ keyword: "아폴론" }] } }
+    } as unknown as StatsBundle;
+    assert.deepEqual(targetKeywordDays(withTarget)?.current, [3, 0, null]);
+  });
+});
+
+describe("앞 기간 값은 날짜로 찾는다 (빠진 날이 있어도 밀리지 않음)", () => {
+  const ga = (date: string, extra: Partial<StatsPoint>) => point("ga4", "daily", date, extra);
+  // 앞 기간 11월 5일이 빠졌다. 순번으로 짝지으면 11월 12일 자리에 11월 6일 값이 들어간다
+  const bundle = {
+    daily: result(
+      "daily",
+      [
+        ga("2026-11-11", { users: 10, views: 20, sessions: 10, avg_seconds: 60 }),
+        ga("2026-11-12", { users: 11, views: 33, sessions: 11, avg_seconds: 70 }),
+        ga("2026-11-13", { users: 12, views: 24, sessions: 12, avg_seconds: 80 })
+      ],
+      [
+        ga("2026-11-04", { users: 1, views: 2, sessions: 1, avg_seconds: 10 }),
+        ga("2026-11-06", { users: 3, views: 9, sessions: 3, avg_seconds: 30 })
+      ]
+    ),
+    page: result(
+      "page",
+      [point("ga4", "page", "2026-11-11", { key: "/works/a", views: 4 })],
+      [point("ga4", "page", "2026-11-06", { key: "/works/a", views: 7 })]
+    )
+  } as unknown as StatsBundle;
+
+  it("요약 방문자 추이", () => {
+    assert.deepEqual(overviewTrend(bundle).previous, [1, null, 3]);
+  });
+
+  it("방문 패턴 한 번에 본 페이지 수 · 머문 시간", () => {
+    assert.deepEqual(depthTrend(bundle).previous, [2, null, 3]);
+    assert.deepEqual(dwellTrend(bundle).previous, [10, null, 30]);
+  });
+
+  it("콘텐츠 펼침 — 사이트 자료가 있는 날은 0, 없는 날은 null", () => {
+    const series = pageDaySeries(bundle, "/works/a");
+    assert.deepEqual(series.current, [4, 0, 0]);
+    assert.deepEqual(series.previous, [0, null, 7]);
+  });
+
+  it("그래프는 빈 날에서 선을 끊는다", () => {
+    assert.deepEqual(valueSegments([1, null, 3, 4]), [[0], [2, 3]]);
+    assert.deepEqual(valueSegments([null, null]), []);
+  });
+});
+
+describe("AI 묶음 칸 — 길이가 다른 칸은 하루 평균으로", () => {
+  it("칸마다 날 수, 로봇은 기록 시작일부터 센 날 수", () => {
+    const ranges = aiDayRanges("2026-10-01", "2026-11-19");
+    const last = ranges[ranges.length - 1];
+    assert.equal(last.from, "2026-11-19");
+    const bundle = {
+      bots: { bots: { since: "2026-11-16", ai: { total: { current: 7, previous: null }, byCompany: {} } } },
+      ai_visits: { ai_visits: { current: { total: 7 } } }
+    } as unknown as StatsBundle;
+    const week = aiDayBucket({ from: "2026-11-12", to: "2026-11-18" }, bundle);
+    assert.equal(week.days, 7);
+    assert.equal(week.botDays, 3);
+    assert.equal(aiDayBucket(last, bundle).days, 1);
+  });
+
+  it("마우스 상자에는 묶음의 두 날짜와 날 수", () => {
+    assert.equal(bucketRangeText({ from: "2026-11-12", to: "2026-11-18" }, axisLabel), "11월 12일~11월 18일 (7일)");
+    assert.equal(bucketRangeText({ from: "2026-11-12", to: "2026-11-12" }, axisLabel), "11월 12일");
+  });
+
+  it("7일 묶음 넷 + 하루짜리 한 칸 — 합으로 견주면 줄어 보이지만 하루 평균은 같다", () => {
+    const flat = trendFact({
+      name: "방문",
+      unit: "회",
+      current: [70, 70, 70, 70, 10],
+      days: [7, 7, 7, 7, 1],
+      previous: null
+    });
+    assert.equal(flat.tone, "flat");
+    assert.match(flat.text, /하루 평균 10회/);
+    assert.match(flat.fairText, /하루 평균으로 견줬어요/);
+    const up = trendFact({ name: "방문", unit: "회", current: [7, 7, 70, 70, 20], days: [7, 7, 7, 7, 1], previous: null });
+    assert.equal(up.tone, "up");
+    assert.match(up.text, /앞쪽 14일\(하루 평균 1회\)보다 뒤쪽 8일\(하루 평균 11.3회\)이 늘었어요/);
   });
 });
 
@@ -186,7 +317,7 @@ describe("방문 패턴 · 들어온 곳 나간 곳", () => {
 
   it("나간 페이지 — page_exit 의 events, 없으면 빈 목록(어림하지 않음)", () => {
     assert.equal(PAGE_EXIT_SINCE, "2026-11-19");
-    assert.deepEqual(exitRows(null, EMPTY_TITLES), { rows: [], total: 0 });
+    assert.deepEqual(exitRows(null, EMPTY_TITLES), { rows: [], total: 0, comparable: false });
     const bundle = {
       page_exit: result("page_exit", [
         point("ga4", "page_exit", "2026-11-19", { key: "/contact", events: 3 }),
@@ -200,6 +331,29 @@ describe("방문 패턴 · 들어온 곳 나간 곳", () => {
       ["/", 4, 50],
       ["/contact", 4, 50]
     ]);
+  });
+
+  it("나간 페이지 증감 — 두 기간이 모두 11월 19일 뒤일 때만, 아니면 비교 불가", () => {
+    const exit = (date: string, key: string, events: number) => point("ga4", "page_exit", date, { key, events });
+    const range = (actualFrom: string, actualTo: string, prevFrom: string, prevTo: string) => ({
+      actual_from: actualFrom,
+      actual_to: actualTo,
+      prev_from: prevFrom,
+      prev_to: prevTo
+    });
+    // 앞 기간(11월 13~19일)은 대부분 모으기 전이라, 앞 기간 1회와 견주면 크게 는 것처럼 보인다
+    const early = {
+      page_exit: result("page_exit", [exit("2026-11-20", "/", 9)], [exit("2026-11-19", "/", 1)], range("2026-11-20", "2026-11-26", "2026-11-13", "2026-11-19"))
+    } as unknown as StatsBundle;
+    const before = exitRows(early, EMPTY_TITLES);
+    assert.equal(before.comparable, false);
+    assert.equal(before.rows[0]?.delta.delta, null);
+    const later = {
+      page_exit: result("page_exit", [exit("2026-11-27", "/", 9)], [exit("2026-11-20", "/", 6)], range("2026-11-27", "2026-12-03", "2026-11-20", "2026-11-26"))
+    } as unknown as StatsBundle;
+    const after = exitRows(later, EMPTY_TITLES);
+    assert.equal(after.comparable, true);
+    assert.equal(after.rows[0]?.delta.previous, "6회");
   });
 });
 

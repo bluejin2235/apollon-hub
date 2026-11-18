@@ -100,27 +100,49 @@ describe("v3 AI ① 읽어 감", () => {
         ["Apple", 2]
       ]
     );
-    assert.equal(rows.find((row) => row.key === "ByteDance")?.purpose, "AI 학습용");
+    // 이름별 숫자가 없으면 실제로 온 로봇을 몰라 「로봇 종류」로만 적는다
+    assert.equal(rows.find((row) => row.key === "ByteDance")?.purpose, "로봇 종류: 학습");
+    assert.equal(rows.find((row) => row.key === "OpenAI")?.purpose, "로봇 종류: 물어봐서 읽음 · 검색 · 학습");
     assert.equal(rows[0]?.change?.previous, "8회");
   });
 
-  it("분류 못 한 로봇은 맨 끝 한 줄, 이름별 숫자가 오면 이름으로 회사를 찾고 남은 이름을 적는다", () => {
+  it("표의 회사 · 숫자는 그래프와 같은 홈페이지 byCompany 하나만 쓴다 — 이름별 숫자가 와도 회사를 다시 나누지 않는다", () => {
     const payload = readBotsPayload(bundleOf());
     assert.ok(payload);
-    payload.ai.byCompany = { ...payload.ai.byCompany, 기타: pair(40, 1) };
+    payload.ai.byCompany = { OpenAI: pair(12, 8), Meta: pair(40, 1), 기타: pair(5, 1) };
     const plain = companyRows(payload);
-    assert.equal(plain[plain.length - 1]?.name, "회사를 알 수 없는 로봇");
-    payload.ai.byName = { "Meta-ExternalAgent": pair(38, 1), GPTBot: pair(12, 8), WeirdBot: pair(2, 0) };
+    assert.deepEqual(
+      plain.map((row) => [row.key, row.value]),
+      [
+        ["Meta", 40],
+        ["OpenAI", 12],
+        ["기타", 5]
+      ]
+    );
+    assert.equal(plain[2]?.name, "기타 로봇 (회사 분류 없음)");
+    assert.ok(!plain.some((row) => row.name.includes("Common Crawl")));
+    payload.ai.byName = {
+      "Meta-ExternalAgent": pair(38, 1),
+      "Meta-ExternalFetcher": pair(2, 0),
+      GPTBot: pair(12, 8),
+      CCBot: pair(3, 1),
+      WeirdBot: pair(2, 0)
+    };
     const named = companyRows(payload);
+    // 숫자는 여전히 byCompany 그대로
     assert.deepEqual(
       named.map((row) => [row.key, row.value]),
       [
-        ["Meta", 38],
+        ["Meta", 40],
         ["OpenAI", 12],
-        ["기타", 2]
+        ["기타", 5]
       ]
     );
-    assert.equal(named[2]?.purpose, "이름: WeirdBot");
+    // 쓰임은 그 줄에 실제로 온 로봇에서 — Meta 는 학습과 물어봐서 읽음이 섞였다
+    assert.equal(named[0]?.purpose, "물어봐서 읽음 · 학습");
+    assert.equal(named[1]?.purpose, "학습");
+    // 홈페이지가 CCBot 을 기타로 두므로 회사 이름을 지어내지 않고 로봇 이름을 적는다
+    assert.equal(named[2]?.purpose, "이름: CCBot, WeirdBot");
   });
 
   it("검색 엔진 로봇은 따로 — 구글 · 빙 · 네이버", () => {

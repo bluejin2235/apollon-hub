@@ -10,12 +10,12 @@
 
 import { Fragment, useMemo, useState } from "react";
 
-import type { AiDayBucket } from "@/components/website/stats-v3/v3-ai-days";
+import { bucketRangeText, type AiDayBucket } from "@/components/website/stats-v3/v3-ai-days";
 import {
-  AI_COMPANY_INFO,
   aiAnswer,
   botsDelta,
   botsPeriodBeforeSince,
+  companyLabel,
   companyRows,
   GOOGLE_SUMMARY,
   readAiVisits,
@@ -83,8 +83,18 @@ function bucketLabel(bucket: AiDayBucket): string {
   return bucket.from === bucket.to ? axisLabel(bucket.from) : `${axisLabel(bucket.from)}~`;
 }
 
-function companyName(key: string): string {
-  return key === "기타" ? "회사 모름" : (AI_COMPANY_INFO[key]?.name.replace(/ \(.*\)$/, "") ?? key);
+/** 마우스 상자 첫 줄 — 묶음이면 두 날짜와 날 수. 로봇 기록이 묶음 중간부터면 그것도 밝힌다 */
+function bucketHead(bucket: AiDayBucket, bots: boolean): string {
+  const head = bucketRangeText(bucket, axisLabel);
+  return bots && bucket.botDays > 0 && bucket.botDays < bucket.days ? `${head} · 로봇 기록 ${bucket.botDays}일` : head;
+}
+
+/** 7일 묶음인데 마지막 칸이 짧으면 그 칸이 낮아 보이는 까닭을 적는다 */
+function shortBucketNote(buckets: AiDayBucket[]): string | null {
+  if (buckets.length < 2 || buckets[0].days === 1) return null;
+  const last = buckets[buckets.length - 1];
+  if (last.days >= buckets[0].days) return null;
+  return `7일씩 묶었어요. 마지막 칸(${bucketRangeText(last, axisLabel)})은 ${last.days}일뿐이라 낮아 보일 수 있어요. 흐름 문장은 하루 평균으로 견줬어요.`;
 }
 
 function AiTrends({ bundle, extras, today }: Pick<V3ScreenProps, "bundle" | "extras" | "today">) {
@@ -111,7 +121,7 @@ function AiTrends({ bundle, extras, today }: Pick<V3ScreenProps, "bundle" | "ext
   const shown = topCompanies.slice(0, 4);
   const restKeys = topCompanies.slice(4);
   const botSeries = [
-    ...shown.map((key) => ({ name: companyName(key), values: botBuckets.map((b) => b.botsByCompany?.[key] ?? 0) })),
+    ...shown.map((key) => ({ name: companyLabel(key, true), values: botBuckets.map((b) => b.botsByCompany?.[key] ?? 0) })),
     ...(restKeys.length > 0
       ? [{ name: "그 밖 회사", values: botBuckets.map((b) => restKeys.reduce((acc, key) => acc + (b.botsByCompany?.[key] ?? 0), 0)) }]
       : [])
@@ -124,6 +134,7 @@ function AiTrends({ bundle, extras, today }: Pick<V3ScreenProps, "bundle" | "ext
           name: "AI 로봇이 읽어 간 횟수",
           unit: "회",
           current: days.buckets.map((b) => b.botsTotal),
+          days: days.buckets.map((b) => b.botDays),
           previous: null,
           unfairReason: since ? `로봇 기록은 ${dayText(since, year)}부터라 앞 기간 기록이 없어요.` : "앞 기간 기록이 없어요.",
           startsOn: since ? dayText(since, year) : null
@@ -139,6 +150,7 @@ function AiTrends({ bundle, extras, today }: Pick<V3ScreenProps, "bundle" | "ext
           name: "AI 답변을 보고 온 방문",
           unit: "회",
           current: days.buckets.map((b) => b.visits),
+          days: days.buckets.map((b) => b.days),
           previous: null,
           unfairReason: oldSite ? oldSiteReason : "앞 기간 기록이 없어요."
         });
@@ -167,12 +179,13 @@ function AiTrends({ bundle, extras, today }: Pick<V3ScreenProps, "bundle" | "ext
 
   const loading = days.state === "loading";
   const failed = days.state === "error";
+  const weekNote = shortBucketNote(days.buckets);
 
   return (
     <>
       <h2 className="v3-section-title">날짜별 흐름 · 잘 되고 있나요?</h2>
       <div className="v3-trends">
-        <TrendCard title="AI 로봇이 읽어 간 횟수 · 회사별" fact={botFact} wide>
+        <TrendCard title="AI 로봇이 읽어 간 횟수 · 회사별" fact={botFact} note={weekNote ?? undefined} wide>
           {loading ? (
             <StatusLine status="loading" />
           ) : failed ? (
@@ -181,6 +194,7 @@ function AiTrends({ bundle, extras, today }: Pick<V3ScreenProps, "bundle" | "ext
             <MultiLineChart
               dates={botBuckets.map((b) => b.from)}
               labels={botBuckets.map(bucketLabel)}
+              tipHeads={botBuckets.map((b) => bucketHead(b, true))}
               series={botSeries}
               unit="회"
               ariaLabel="AI 로봇이 읽어 간 횟수 회사별 날짜별"
@@ -196,7 +210,7 @@ function AiTrends({ bundle, extras, today }: Pick<V3ScreenProps, "bundle" | "ext
         <TrendCard
           title="AI 답변을 보고 온 방문 · 날짜별"
           fact={visitFact}
-          note="AI 앱에서 누르면 출처가 안 남는 경우가 많아 실제보다 적게 잡혀요."
+          note={`AI 앱에서 누르면 출처가 안 남는 경우가 많아 실제보다 적게 잡혀요.${weekNote ? ` ${weekNote}` : ""}`}
         >
           {loading ? (
             <StatusLine status="loading" />
@@ -208,6 +222,7 @@ function AiTrends({ bundle, extras, today }: Pick<V3ScreenProps, "bundle" | "ext
               two
               labels={days.buckets.map(bucketLabel)}
               dates={days.buckets.map((b) => b.from)}
+              tipHeads={days.buckets.map((b) => bucketHead(b, false))}
               current={days.buckets.map((b) => b.visits)}
               previous={[]}
               unit="회"

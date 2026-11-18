@@ -70,6 +70,24 @@ export function tickIndexes(count: number, most = 7): number[] {
   return out;
 }
 
+/**
+ * 값이 이어진 구간(점 번호 목록). 기록 없는 날(null)에서 선을 끊는다.
+ * 빈 날을 건너 이어 그리면 그날도 값이 있는 것처럼 보이기 때문이다.
+ */
+export function valueSegments(values: (number | null)[]): number[][] {
+  const out: number[][] = [];
+  let now: number[] = [];
+  values.forEach((v, i) => {
+    if (typeof v === "number") now.push(i);
+    else if (now.length > 0) {
+      out.push(now);
+      now = [];
+    }
+  });
+  if (now.length > 0) out.push(now);
+  return out;
+}
+
 /** 점 i 의 가로 위치(%) — 양 끝은 2% 띄운다 */
 export function xPercent(i: number, count: number): number {
   if (count <= 1) return 50;
@@ -124,21 +142,11 @@ function SeriesChart({ labels, series, mini, area, marks = [], format, ariaLabel
   const ticks = tickIndexes(count, mini ? 5 : 7);
   const plotGuess = mini ? PLOT_GUESS.mini : PLOT_GUESS.full;
 
-  const pointsOf = (list: (number | null)[]) =>
-    list
-      .map((v, i) => (typeof v === "number" ? `${xs[i]},${yOf(v)}` : null))
-      .filter(Boolean)
-      .join(" ");
   const cur = series.find((s) => s.look === "current");
-  const curPoints = cur
-    ? cur.values
-        .map((v, i) => (typeof v === "number" ? ([xs[i], yOf(v)] as const) : null))
-        .filter((p): p is readonly [number, number] => p !== null)
-    : [];
-  const areaPath =
-    area && curPoints.length > 1
-      ? `M${curPoints[0][0]} ${base} L${curPoints.map((p) => `${p[0]} ${p[1]}`).join(" L")} L${curPoints[curPoints.length - 1][0]} ${base}Z`
-      : null;
+  const areaPath = area && cur ? valueSegments(cur.values).filter((seg) => seg.length > 1).map((seg) => {
+    const pts = seg.map((i) => `${xs[i]} ${yOf(cur.values[i] as number)}`);
+    return `M${xs[seg[0]]} ${base} L${pts.join(" L")} L${xs[seg[seg.length - 1]]} ${base}Z`;
+  }).join(" ") || null : null;
 
   // 마우스 칸 — 이웃 점 사이 가운데에서 나눈다
   const zones = xs.map((x, i) => {
@@ -189,9 +197,16 @@ function SeriesChart({ labels, series, mini, area, marks = [], format, ariaLabel
           })}
           <svg x="0" y="0" width="100%" height={h} viewBox={`0 0 100 ${h}`} preserveAspectRatio="none" aria-hidden="true">
             {areaPath ? <path d={areaPath} className="v3-ser-area" /> : null}
-            {series.map((s) => (
-              <polyline key={s.name} points={pointsOf(s.values)} className={lookClass(s.look)} vectorEffect="non-scaling-stroke" />
-            ))}
+            {series.map((s) =>
+              valueSegments(s.values).map((seg) => (
+                <polyline
+                  key={`${s.name}-${seg[0]}`}
+                  points={seg.map((i) => `${xs[i]},${yOf(s.values[i] as number)}`).join(" ")}
+                  className={lookClass(s.look)}
+                  vectorEffect="non-scaling-stroke"
+                />
+              ))
+            )}
           </svg>
           {!mini
             ? marks.map((mark, k) => {
@@ -301,6 +316,8 @@ export type LineChartProps = {
   dates?: string[];
   /** 같은 순번의 앞 기간 날짜 */
   prevDates?: (string | null)[];
+  /** 상자 첫 줄 날짜 글. 며칠 묶음이면 「11월 1일~11월 7일 (7일)」처럼 두 날짜를 다 쓴다 */
+  tipHeads?: string[];
   /** 상자 숫자 뒤 단위 — 명 · 회 · 개 */
   unit?: string;
   mini?: boolean;
@@ -316,7 +333,8 @@ export type LineChartProps = {
 
 /** 이번 기간 실선 · 앞 기간 점선 */
 export function LineChart(props: LineChartProps) {
-  const { labels, current, previous, dates, prevDates, unit = "", mini, two, marks, format, tipFormat, ariaLabel, initialActive } = props;
+  const { labels, current, previous, dates, prevDates, tipHeads, unit = "", mini, two, marks, format, tipFormat, ariaLabel, initialActive } =
+    props;
   const fmt = format ?? ((v: number) => String(Math.round(v)));
   const tipFmt = (v: number) =>
     tipFormat ? tipFormat(v) : `${Number.isInteger(v) ? v.toLocaleString("ko-KR") : fmt(v)}${unit}`;
@@ -326,7 +344,7 @@ export function LineChart(props: LineChartProps) {
     { name: "이번 기간", values: current, look: "current" as const }
   ];
   const tip = (i: number) => {
-    const day = dates?.[i] ? axisLabel(dates[i]) : labels[i];
+    const day = tipHeads?.[i] ?? (dates?.[i] ? axisLabel(dates[i]) : labels[i]);
     const now = current[i];
     const before = previous[i];
     const prevDay = prevDates?.[i] ? axisLabel(prevDates[i] as string) : null;
@@ -374,6 +392,8 @@ export type MultiLineChartProps = {
   /** 가로축 글자. 없으면 날짜 */
   labels?: string[];
   series: { name: string; values: (number | null)[] }[];
+  /** 상자 첫 줄 날짜 글. 없으면 가로축 글 */
+  tipHeads?: string[];
   unit?: string;
   mini?: boolean;
   format?: (value: number) => string;
@@ -381,13 +401,13 @@ export type MultiLineChartProps = {
 };
 
 /** 여러 갈래를 한 그림에 — 회사별 · 회사 이름 vs 일반 명사 */
-export function MultiLineChart({ dates, labels, series, unit = "", mini, format, ariaLabel }: MultiLineChartProps) {
+export function MultiLineChart({ dates, labels, series, tipHeads, unit = "", mini, format, ariaLabel }: MultiLineChartProps) {
   const fmt = format ?? ((v: number) => String(Math.round(v)));
   const looks: ChartSeries[] = series.map((s, i) => ({ name: s.name, values: s.values, look: i }));
   const axis = labels ?? dates.map(axisLabel);
   const tip = (i: number) => ({
     lines: [
-      axis[i],
+      tipHeads?.[i] ?? axis[i],
       ...looks.map(
         (s) => `${s.name} ${typeof s.values[i] === "number" ? `${(s.values[i] as number).toLocaleString("ko-KR")}${unit}` : "기록 없음"}`
       )

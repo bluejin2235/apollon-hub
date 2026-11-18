@@ -33,6 +33,7 @@ import {
   intKo,
   normalizePath,
   pctNumber,
+  prevDateOf,
   prevGuard,
   ratioDelta,
   searchToArticleOf,
@@ -331,7 +332,10 @@ export function contentMoves(rows: ContentRow[], bundle: StatsBundle | null): { 
 
 /* ─────────────────────── 펼침 — 이 글 날짜별 조회 ─────────────────────── */
 
-/** 이 경로의 날짜별 조회. 날짜 칸은 사이트 전체 날짜(daily)에 맞추고 없는 날은 0 */
+/**
+ * 이 경로의 날짜별 조회. 날짜 칸은 사이트 전체 날짜(daily)에 맞추고, 사이트 자료는 있는데 이 글 행이 없는 날은 0.
+ * 앞 기간은 비교 날짜(prevDateOf)로 찾고, 그 날 사이트 자료가 없으면 null(기록 없음).
+ */
 export function pageDaySeries(bundle: StatsBundle | null, path: string): DaySeries {
   const sumBy = (rows: StatsPoint[]) => {
     const map = new Map<string, number>();
@@ -346,11 +350,15 @@ export function pageDaySeries(bundle: StatsBundle | null, path: string): DaySeri
   const cur = sumBy(ga4(bundle, "page", "current"));
   const prev = sumBy(ga4(bundle, "page", "previous"));
   const dates = days("current");
-  const prevDates = prevGuard(bundle)(days("previous")) ?? [];
+  const prevDays = new Set(prevGuard(bundle)(days("previous")) ?? []);
+  const prevDate = prevDateOf(bundle);
   return {
     dates,
     current: dates.map((date) => cur.get(date) ?? 0),
-    previous: dates.map((_, index) => (prevDates[index] ? (prev.get(prevDates[index]) ?? 0) : null))
+    previous: dates.map((date) => {
+      const before = prevDate(date);
+      return before && prevDays.has(before) ? (prev.get(before) ?? 0) : null;
+    })
   };
 }
 

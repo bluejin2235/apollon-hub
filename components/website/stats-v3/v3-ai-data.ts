@@ -4,9 +4,9 @@
  *   ② AI 답변에 우리가 나오나 (stats/ai-answers, 사람이 직접 물어본 기록)
  *   ③ AI 답변을 보고 사람이 왔나 (kind=ai_visits, GA 출처가 AI 서비스인 방문)
  *
- * ① 은 회사별로 나누고, 회사마다 무엇에 쓰는 로봇인지 쉬운 말을 붙인다. 검색 엔진 로봇(구글 · 빙 · 네이버)은
- * AI 가 아니어서 따로 「참고」로 보인다. 홈페이지 분류 목록에 없는 이름은 「회사를 알 수 없는 로봇」으로 두고,
- * 홈페이지가 이름별 숫자(ai.byName)를 주면 허브가 이름으로 회사를 찾아 옮기고 남은 이름을 그대로 적는다.
+ * ① 은 홈페이지가 나눈 회사(ai.byCompany)를 그대로 쓴다. 표와 날짜별 그래프가 같은 출처라 숫자가 어긋나지 않는다.
+ * 허브는 회사를 다시 나누지 않는다. 검색 엔진 로봇(구글 · 빙 · 네이버)은 AI 가 아니어서 따로 「참고」로 보인다.
+ * 홈페이지가 회사를 정하지 못한 로봇(CCBot 포함)은 「기타 로봇」 한 줄이고, 이름별 숫자(ai.byName)가 오면 이름을 적는다.
  */
 
 import {
@@ -37,39 +37,67 @@ export function botsDelta(pair: BotsCountPair | undefined, higherIsBetter = true
 
 /* ─────────────────────── ① 읽어 갔나 ─────────────────────── */
 
-/** 홈페이지 회사 이름 → 화면 이름 · 무엇에 쓰는 로봇인지 */
-export const AI_COMPANY_INFO: Record<string, { name: string; purpose: string }> = {
-  OpenAI: { name: "OpenAI (ChatGPT)", purpose: "검색 · 답변 · AI 학습" },
-  Anthropic: { name: "Anthropic (Claude)", purpose: "답변 · AI 학습" },
-  Perplexity: { name: "Perplexity", purpose: "검색 · 답변" },
-  Meta: { name: "Meta (페이스북 · 인스타그램)", purpose: "AI 학습용" },
-  ByteDance: { name: "ByteDance (틱톡)", purpose: "AI 학습용" },
-  Apple: { name: "Apple", purpose: "AI 학습용" },
-  Google: { name: "Google", purpose: "AI 학습용" },
-  Microsoft: { name: "Microsoft", purpose: "AI" },
-  Naver: { name: "Naver", purpose: "AI" },
-  Amazon: { name: "Amazon", purpose: "AI 학습 · 알렉사" },
-  "Common Crawl": { name: "Common Crawl", purpose: "공개 자료 모음 (여러 AI가 학습에 씀)" }
+/** 홈페이지 회사 이름 → 화면 이름. 회사 나누기는 홈페이지(ai.byCompany)가 한 그대로 쓴다 */
+export const AI_COMPANY_INFO: Record<string, { name: string }> = {
+  OpenAI: { name: "OpenAI (ChatGPT)" },
+  Anthropic: { name: "Anthropic (Claude)" },
+  Perplexity: { name: "Perplexity" },
+  Meta: { name: "Meta (페이스북 · 인스타그램)" },
+  ByteDance: { name: "ByteDance (틱톡)" },
+  Apple: { name: "Apple" },
+  Google: { name: "Google" },
+  Microsoft: { name: "Microsoft" },
+  Naver: { name: "Naver" }
 };
 
-const UNKNOWN_COMPANY = "기타";
+/** 홈페이지가 회사를 정하지 못한 로봇을 모으는 칸 */
+export const OTHER_COMPANY = "기타";
+export const OTHER_COMPANY_NAME = "기타 로봇 (회사 분류 없음)";
 
-/** 로봇 이름으로 회사 찾기 — 홈페이지 분류 목록에 없는 이름도 허브가 아는 것은 옮긴다 */
-const BOT_NAME_COMPANY: [RegExp, string][] = [
-  [/meta-external|facebookbot|meta-webindexer/i, "Meta"],
-  [/gptbot|chatgpt|oai-searchbot/i, "OpenAI"],
-  [/claude|anthropic/i, "Anthropic"],
-  [/perplexity/i, "Perplexity"],
-  [/bytespider|tiktok/i, "ByteDance"],
-  [/applebot/i, "Apple"],
-  [/google-extended|googleother|google-cloudvertexbot/i, "Google"],
-  [/amazonbot/i, "Amazon"],
-  [/ccbot/i, "Common Crawl"]
+/** 회사 이름 — 표와 그래프가 같은 이름을 쓴다. short 는 그래프 범례용(괄호 뺌) */
+export function companyLabel(key: string, short = false): string {
+  if (key === OTHER_COMPANY) return short ? "기타 로봇" : OTHER_COMPANY_NAME;
+  const name = AI_COMPANY_INFO[key]?.name ?? key;
+  return short ? name.replace(/ \(.*\)$/, "") : name;
+}
+
+/**
+ * 홈페이지 로봇 분류 규칙(apollon-website src/lib/stats/bot-class.ts BOT_CLASS_RULES)을 옮겨 둔 것.
+ * 회사를 새로 정하는 데 쓰지 않는다. 홈페이지가 이름별 숫자(ai.byName)를 주면 그 로봇이 무엇에 쓰는 로봇인지 적는 데만 쓴다.
+ * 홈페이지 규칙이 바뀌면 여기도 같이 바꾼다. 긴 이름부터 맞춘다.
+ */
+export const HOMEPAGE_BOT_RULES: readonly { token: string; company: string; purpose: string }[] = [
+  { token: "chatgpt-user", company: "OpenAI", purpose: "물어봐서 읽음" },
+  { token: "claude-user", company: "Anthropic", purpose: "물어봐서 읽음" },
+  { token: "perplexity-user", company: "Perplexity", purpose: "물어봐서 읽음" },
+  { token: "oai-searchbot", company: "OpenAI", purpose: "검색" },
+  { token: "claude-searchbot", company: "Anthropic", purpose: "검색" },
+  { token: "perplexitybot", company: "Perplexity", purpose: "검색" },
+  { token: "gptbot", company: "OpenAI", purpose: "학습" },
+  { token: "claudebot", company: "Anthropic", purpose: "학습" },
+  { token: "bytespider", company: "ByteDance", purpose: "학습" },
+  { token: "meta-externalagent", company: "Meta", purpose: "학습" },
+  { token: "meta-externalfetcher", company: "Meta", purpose: "물어봐서 읽음" },
+  { token: "applebot-extended", company: "Apple", purpose: "학습" },
+  { token: "ccbot", company: OTHER_COMPANY, purpose: "학습" }
 ];
 
-export function companyOfBotName(name: string): string | null {
-  for (const [re, company] of BOT_NAME_COMPANY) if (re.test(name)) return company;
-  return null;
+/** 쓰임을 늘 같은 순서로 */
+const PURPOSE_ORDER = ["물어봐서 읽음", "검색", "학습", "기타"];
+
+const RULES_BY_LENGTH = [...HOMEPAGE_BOT_RULES].sort((a, b) => b.token.length - a.token.length);
+
+/** 로봇 이름 → 홈페이지 규칙의 회사 · 쓰임. 규칙에 없으면 기타 · 기타 (홈페이지와 같다) */
+export function classifyBotName(name: string): { company: string; purpose: string } {
+  const value = name.toLowerCase();
+  const rule = RULES_BY_LENGTH.find((item) => value.includes(item.token));
+  return rule ? { company: rule.company, purpose: rule.purpose } : { company: OTHER_COMPANY, purpose: "기타" };
+}
+
+/** 이 회사로 분류되는 로봇들의 쓰임(규칙 기준) — 이름별 숫자가 없을 때 「이 회사 로봇 종류」로만 보인다 */
+function rulePurposes(company: string): string[] {
+  const set = new Set(HOMEPAGE_BOT_RULES.filter((rule) => rule.company === company).map((rule) => rule.purpose));
+  return PURPOSE_ORDER.filter((purpose) => set.has(purpose));
 }
 
 export type CompanyRow = {
@@ -78,22 +106,10 @@ export type CompanyRow = {
   purpose: string;
   value: number;
   change: DeltaView | null;
-  /** 회사를 알 수 없는 줄 — 들어 있는 로봇 이름(알면) */
+  /** 이 줄에 실제로 들어 있는 로봇 이름(홈페이지가 이름별 숫자를 줄 때만) */
   names?: string[];
   unknown?: boolean;
 };
-
-function addPair(into: Map<string, BotsCountPair>, key: string, pair: BotsCountPair) {
-  const prev = into.get(key);
-  if (!prev) {
-    into.set(key, { current: pair.current, previous: pair.previous });
-    return;
-  }
-  into.set(key, {
-    current: prev.current + pair.current,
-    previous: prev.previous == null || pair.previous == null ? null : prev.previous + pair.previous
-  });
-}
 
 /** 홈페이지가 이름별 숫자를 주면(ai.byName) 쓴다. 지금 응답에는 없다 */
 function byNameOf(payload: BotsStatsPayload): Record<string, BotsCountPair> | null {
@@ -101,40 +117,53 @@ function byNameOf(payload: BotsStatsPayload): Record<string, BotsCountPair> | nu
   return value && typeof value === "object" ? value : null;
 }
 
-/** 회사별 줄 — 많은 순, 0 인 회사는 뺀다. 회사를 알 수 없는 로봇은 맨 끝 */
+/**
+ * 회사별 줄 — 숫자와 회사 나누기는 늘 홈페이지 ai.byCompany 하나만 쓴다(날짜별 그래프와 같은 출처).
+ * 쓰임 글은 그 줄에 실제로 들어온 로봇에서 만든다. 한 회사 줄에 쓰임이 섞이면 「학습 · 물어봐서 읽음」처럼 다 적는다.
+ * 이름별 숫자가 없으면 실제로 어느 로봇이 왔는지 몰라, 그 회사 로봇 종류를 「로봇 종류:」로 적는다.
+ * 많은 순, 0 인 회사는 뺀다. 기타 로봇은 맨 끝.
+ */
 export function companyRows(payload: BotsStatsPayload | null): CompanyRow[] {
   if (!payload) return [];
-  const companies = new Map<string, BotsCountPair>();
-  const unknownNames: string[] = [];
   const byName = byNameOf(payload);
+  const seen = new Map<string, { purposes: Set<string>; names: string[] }>();
   if (byName) {
     for (const [name, pair] of Object.entries(byName)) {
-      const company = companyOfBotName(name);
-      if (company) addPair(companies, company, pair);
-      else {
-        addPair(companies, UNKNOWN_COMPANY, pair);
-        if (pair.current > 0) unknownNames.push(name);
-      }
+      if (!(pair.current > 0)) continue;
+      const cls = classifyBotName(name);
+      const item = seen.get(cls.company) ?? { purposes: new Set<string>(), names: [] };
+      item.purposes.add(cls.purpose);
+      item.names.push(name);
+      seen.set(cls.company, item);
     }
-  } else {
-    for (const [key, pair] of Object.entries(payload.ai.byCompany ?? {})) addPair(companies, key, pair);
   }
   const rows: CompanyRow[] = [];
-  for (const [key, pair] of companies) {
+  for (const [key, pair] of Object.entries(payload.ai.byCompany ?? {})) {
     if (!(pair.current > 0)) continue;
-    const unknown = key === UNKNOWN_COMPANY;
-    const info = AI_COMPANY_INFO[key];
+    const unknown = key === OTHER_COMPANY;
+    const found = byName ? seen.get(key) : undefined;
+    let purpose: string;
+    if (found) {
+      const purposes = PURPOSE_ORDER.filter((item) => found.purposes.has(item) && item !== "기타");
+      // 기타 칸은 회사를 모르니 로봇 이름을 그대로 보인다(CCBot 등)
+      purpose = unknown
+        ? `이름: ${found.names.join(", ")}`
+        : purposes.length > 0
+          ? purposes.join(" · ")
+          : "쓰임 모름";
+    } else if (unknown) {
+      purpose = "홈페이지 분류 목록에 없는 로봇과 CCBot (로봇 이름은 아직 받지 못함)";
+    } else {
+      const purposes = rulePurposes(key);
+      purpose = purposes.length > 0 ? `로봇 종류: ${purposes.join(" · ")}` : "쓰임 모름";
+    }
     rows.push({
       key,
-      name: unknown ? "회사를 알 수 없는 로봇" : (info?.name ?? key),
-      purpose: unknown
-        ? unknownNames.length > 0
-          ? `이름: ${unknownNames.join(", ")}`
-          : "홈페이지 분류 목록에 없는 로봇 (이름은 아직 받지 못함)"
-        : (info?.purpose ?? "AI"),
+      name: companyLabel(key),
+      purpose,
       value: pair.current,
       change: botsDelta(pair),
-      names: unknown ? unknownNames : undefined,
+      names: found?.names,
       unknown: unknown || undefined
     });
   }

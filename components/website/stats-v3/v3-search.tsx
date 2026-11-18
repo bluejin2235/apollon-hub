@@ -45,6 +45,13 @@ function lagText(bundle: StatsBundle | null, year: number): string {
   return `구글 검색 숫자는 2~3일 늦게 들어와요. 지금은 ${dayText(last, year)}까지 있어요.`;
 }
 
+/** 「11월 16일 · 11월 17일은 검색어 자료가 아직 없어」 — 일별 합계만 있고 검색어 행이 없는 날 */
+function missingText(dates: string[], year: number): string {
+  const shown = dates.slice(0, 3).map((date) => dayText(date, year)).join(" · ");
+  const more = dates.length > 3 ? ` 외 ${dates.length - 3}일` : "";
+  return `${shown}${more}은 검색어 자료가 아직 없어`;
+}
+
 function GroupNumber({ title, hint, group }: { title: string; hint: string; group: SearchGroup | null }) {
   return (
     <>
@@ -139,7 +146,9 @@ function SearchTrends({ bundle, today }: { bundle: StatsBundle | null; today: st
         <TrendCard
           title="회사 이름 vs 일반 명사 · 보인 횟수"
           fact={genericFact}
-          note="「구글이 숨긴 검색어」는 드물게 검색된 말이라 구글이 개인정보 보호로 글자를 보여 주지 않은 몫이에요."
+          note={`「구글이 숨긴 검색어」는 드물게 검색된 말이라 구글이 개인정보 보호로 글자를 보여 주지 않은 몫이에요.${
+            splitImp.missing.length > 0 ? ` ${missingText(splitImp.missing, year)} 선을 비워 뒀어요(0이 아니에요).` : ""
+          }`}
         >
           {many ? (
             <MultiLineChart
@@ -158,7 +167,11 @@ function SearchTrends({ bundle, today }: { bundle: StatsBundle | null; today: st
             <div className="v3-chart-empty">—</div>
           )}
         </TrendCard>
-        <TrendCard title="회사 이름 vs 일반 명사 · 눌린 횟수" fact={genericClickFact}>
+        <TrendCard
+          title="회사 이름 vs 일반 명사 · 눌린 횟수"
+          fact={genericClickFact}
+          note={splitClk.missing.length > 0 ? `${missingText(splitClk.missing, year)} 선을 비워 뒀어요(0이 아니에요).` : undefined}
+        >
           {many ? (
             <MultiLineChart
               mini
@@ -338,7 +351,8 @@ export function V3Search({ bundle, status, today, catalog }: V3ScreenProps) {
           <h2>어떤 말로 찾아오나요?</h2>
           {range ? (
             <span className="v3-tiny">
-              {rangeText(range.from, range.to, year)} · 앞 기간 {rangeText(range.prevFrom, range.prevTo, year)}
+              검색어 자료가 있는 {rangeText(range.from, range.to, year)} · 앞 기간{" "}
+              {range.prevFrom && range.prevTo ? rangeText(range.prevFrom, range.prevTo, year) : "검색어 기록 없음"}
             </span>
           ) : null}
         </div>
@@ -372,6 +386,9 @@ export function V3Search({ bundle, status, today, catalog }: V3ScreenProps) {
                     가운데, 드물게 검색된 말은 구글이 개인정보 보호로 글자를 숨겨요. 그래서 회사 이름과 일반 명사를 더해도 전체보다
                     적어요.
                   </p>
+                  {hidden.missing.length > 0 ? (
+                    <p className="v3-metric-hint">{missingText(hidden.missing, year)} 이 칸 숫자에서 뺐어요.</p>
+                  ) : null}
                 </>
               ) : (
                 <div className="v3-big-num">—</div>

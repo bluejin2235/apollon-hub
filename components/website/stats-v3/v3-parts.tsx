@@ -6,6 +6,7 @@
 import type { ReactNode } from "react";
 
 import type { DeltaView } from "@/components/website/stats/stats-data";
+import { valueSegments } from "@/components/website/stats-v3/v3-chart";
 
 export const PREP = "준비 중";
 
@@ -111,26 +112,35 @@ export function Track({ value, max }: { value: number; max: number }) {
   );
 }
 
-function sparkPoints(values: number[], max: number): string {
-  if (values.length === 0) return "";
-  const step = values.length > 1 ? 76 / (values.length - 1) : 0;
-  return values
-    .map((value, i) => {
-      const x = 2 + step * i;
-      const y = 19 - (max > 0 ? (value / max) * 16 : 0);
-      return `${x.toFixed(1)},${y.toFixed(1)}`;
-    })
-    .join(" ");
+/** 작은 선의 점들. count 는 가로 칸 수(이번 기간 날 수)이고, null 칸에서는 선을 끊는다 */
+function sparkLines(values: (number | null)[], max: number, count = values.length): string[] {
+  if (values.length === 0) return [];
+  const step = count > 1 ? 76 / (count - 1) : 0;
+  return valueSegments(values).map((seg) =>
+    seg
+      .map((i) => {
+        const x = 2 + step * i;
+        const y = 19 - (max > 0 ? ((values[i] as number) / max) * 16 : 0);
+        return `${x.toFixed(1)},${y.toFixed(1)}`;
+      })
+      .join(" ")
+  );
 }
 
 /** 표 안 작은 추이 — 이번 기간 실선 · 앞 기간 점선 (목표 키워드 표) */
-export function Spark({ current, previous, label }: { current: number[]; previous: number[]; label: string }) {
+/** 이번 기간 실선 · 앞 기간 점선. previous 는 이번 날짜와 같은 자리의 비교 날짜 값(없으면 null) */
+export function Spark({ current, previous, label }: { current: number[]; previous: (number | null)[]; label: string }) {
   if (current.length < 2) return <span className="v3-muted">—</span>;
-  const max = Math.max(1, ...current, ...previous);
+  const prev = previous.slice(0, current.length);
+  const max = Math.max(1, ...current, ...prev.filter((v): v is number => typeof v === "number"));
   return (
     <svg className="v3-spark" viewBox="0 0 80 22" role="img" aria-label={label}>
-      {previous.length > 1 ? <polyline className="v3-spark-prev" points={sparkPoints(previous.slice(0, current.length), max)} /> : null}
-      <polyline className="v3-spark-cur" points={sparkPoints(current, max)} />
+      {sparkLines(prev, max, current.length).map((points) => (
+        <polyline key={`p-${points}`} className="v3-spark-prev" points={points} />
+      ))}
+      {sparkLines(current, max).map((points) => (
+        <polyline key={`c-${points}`} className="v3-spark-cur" points={points} />
+      ))}
     </svg>
   );
 }
