@@ -2,7 +2,7 @@
 
 /**
  * 방문 패턴 — 「언제 오고, 어떻게 돌아다니나요?」 (목업 #view-pattern)
- * 요일과 시간대 · 나간 페이지는 아직 모으지 않아 「준비 중」, 처음/다시 · 문의하기 누름은 배지 떼고 실제 값.
+ * 요일과 시간대는 hourly(자료가 오기 전 응답이면 「준비 중」), 나간 페이지는 BigQuery 전이라 「준비 중」, 처음/다시 · 문의하기 누름은 실제 값.
  */
 
 import { useMemo } from "react";
@@ -11,6 +11,8 @@ import { titlesOf } from "@/components/website/stats-v3/v3-content-data";
 import { axisLabel, LineChart } from "@/components/website/stats-v3/v3-chart";
 import { durationText } from "@/components/website/stats-v3/v3-data";
 import {
+  Badge,
+  Change,
   DeltaBlock,
   HBars,
   Intro,
@@ -35,13 +37,83 @@ import {
   visitsAnswer,
   type MiniTrend
 } from "@/components/website/stats-v3/v3-visits-data";
-import { readActualRange } from "@/components/website/stats/stats-data";
+import { makeCountDelta, previousIsOldSite, readActualRange } from "@/components/website/stats/stats-data";
+import { hourGrid, peakCell } from "@/components/website/stats-v3/v3-fill-data";
 
 const HEAT_DAYS = ["월", "화", "수", "목", "금", "토", "일"];
 const HEAT_SLOTS = ["00–03시", "03–06시", "06–09시", "09–12시", "12–15시", "15–18시", "18–21시", "21–24시"];
 
-/** 요일 7줄 × 3시간 8칸. 시간대 자료를 모으기 전이라 칸은 「—」 */
-function Heat() {
+/** 0~4 단계. 0 은 방문 없음 */
+function heatLevel(value: number, max: number): number {
+  if (value <= 0 || max <= 0) return 0;
+  return Math.min(4, Math.max(1, Math.ceil((value / max) * 4)));
+}
+
+/** 요일 7줄 × 3시간 8칸 (hourly). 자료가 오기 전 응답이면 칸은 「—」 */
+function Heat({ bundle }: { bundle: V3ScreenProps["bundle"] }) {
+  const grid = useMemo(() => hourGrid(bundle), [bundle]);
+  const prevGrid = useMemo(() => (previousIsOldSite(bundle) ? null : hourGrid(bundle, "previous")), [bundle]);
+  const peak = grid ? peakCell(grid) : null;
+  if (grid) {
+    return (
+      <div className="v3-card">
+        <div className="v3-card-head">
+          <div>
+            <h2>요일과 시간대</h2>
+            <p className="v3-card-sub">
+              각 칸은 3시간 동안의 방문자 수 · 서울 시각{peak ? ` · 가장 많은 때 ${peak}` : ""}
+            </p>
+          </div>
+        </div>
+        <div className="v3-table-wrap">
+          <table className="v3-heat">
+            <thead>
+              <tr>
+                <th>요일</th>
+                {HEAT_SLOTS.map((slot) => (
+                  <th key={slot}>{slot}</th>
+                ))}
+                <th>증감</th>
+              </tr>
+            </thead>
+            <tbody>
+              {HEAT_DAYS.map((day, d) => {
+                const dayTotal = grid.cells[d].reduce((a, b) => a + b, 0);
+                const prevTotal = prevGrid ? prevGrid.cells[d].reduce((a, b) => a + b, 0) : null;
+                return (
+                  <tr key={day}>
+                    <td className="v3-day">{day}</td>
+                    {HEAT_SLOTS.map((slot, b) => {
+                      const value = grid.cells[d][b];
+                      return (
+                        <td key={slot} className={`v3-heat-${heatLevel(value, grid.max)}`}>
+                          {value > 0 ? value.toLocaleString("ko-KR") : "·"}
+                        </td>
+                      );
+                    })}
+                    <td>
+                      {prevTotal == null ? (
+                        <Badge>비교 불가</Badge>
+                      ) : (
+                        <Change delta={makeCountDelta(dayTotal, prevTotal, true, `${prevTotal}명`)} />
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+        <div className="v3-legend v3-heat-legend">
+          <span>적음</span>
+          {[0, 1, 2, 3, 4].map((level) => (
+            <i key={level} className={`v3-heat-key v3-heat-${level}`} />
+          ))}
+          <span>많음 · 칸 안에 실제 방문자 수 표시</span>
+        </div>
+      </div>
+    );
+  }
   return (
     <div className="v3-card">
       <div className="v3-card-head">
@@ -173,7 +245,7 @@ export function V3Visits({ bundle, status, today, catalog }: V3ScreenProps) {
           <Metric key={item.id} label={item.label} value={item.value} unit={item.unit} delta={item.delta} />
         ))}
       </div>
-      <Heat />
+      <Heat bundle={bundle} />
       <div className="v3-card">
         <div className="v3-two">
           <div>

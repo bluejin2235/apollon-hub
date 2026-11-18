@@ -108,6 +108,30 @@ export function Track({ value, max }: { value: number; max: number }) {
   );
 }
 
+function sparkPoints(values: number[], max: number): string {
+  if (values.length === 0) return "";
+  const step = values.length > 1 ? 76 / (values.length - 1) : 0;
+  return values
+    .map((value, i) => {
+      const x = 2 + step * i;
+      const y = 19 - (max > 0 ? (value / max) * 16 : 0);
+      return `${x.toFixed(1)},${y.toFixed(1)}`;
+    })
+    .join(" ");
+}
+
+/** 표 안 작은 추이 — 이번 기간 실선 · 앞 기간 점선 (목표 키워드 표) */
+export function Spark({ current, previous, label }: { current: number[]; previous: number[]; label: string }) {
+  if (current.length < 2) return <span className="v3-muted">—</span>;
+  const max = Math.max(1, ...current, ...previous);
+  return (
+    <svg className="v3-spark" viewBox="0 0 80 22" role="img" aria-label={label}>
+      {previous.length > 1 ? <polyline className="v3-spark-prev" points={sparkPoints(previous.slice(0, current.length), max)} /> : null}
+      <polyline className="v3-spark-cur" points={sparkPoints(current, max)} />
+    </svg>
+  );
+}
+
 export type HBarRow = { name: string; value: number | null; change?: DeltaView | null };
 
 /** 이름 · 막대 · 숫자 · 증감 한 줄 */

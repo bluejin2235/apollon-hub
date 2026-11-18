@@ -2,7 +2,8 @@
 
 /**
  * 콘텐츠 — 「무엇을 많이, 오래 보나요?」 (목업 #view-content)
- * 글별 머문 시간 · 이 글로 들어온 검색어 · 하루(시간대) 추이는 아직 모으지 않아 「준비 중」.
+ * 글별 머문 시간은 page_engagement, 이 글로 들어온 검색어는 query_page. 자료가 오기 전 응답이면 「준비 중」.
+ * 하루(시간대) 추이는 글별 시간대 자료가 없어 「준비 중」.
  */
 
 import { Fragment, useMemo, useState } from "react";
@@ -21,7 +22,8 @@ import {
   type MoveRow,
   type SortKey
 } from "@/components/website/stats-v3/v3-content-data";
-import { intKo, pctNumber } from "@/components/website/stats-v3/v3-data";
+import { durationText, intKo, pctNumber } from "@/components/website/stats-v3/v3-data";
+import { dwellByPath, hasQueryPage, queriesForPath } from "@/components/website/stats-v3/v3-fill-data";
 import {
   Badge,
   Change,
@@ -73,6 +75,8 @@ function SortHead({
 
 function Detail({ row, bundle, year }: { row: ContentRow; bundle: StatsBundle | null; year: number }) {
   const series = useMemo(() => pageDaySeries(bundle, row.path), [bundle, row.path]);
+  const hasQueries = useMemo(() => hasQueryPage(bundle), [bundle]);
+  const queries = useMemo(() => queriesForPath(bundle, row.path), [bundle, row.path]);
   const first = series.dates[0];
   const last = series.dates[series.dates.length - 1];
   const many = series.dates.length > 1;
@@ -98,16 +102,31 @@ function Detail({ row, bundle, year }: { row: ContentRow; bundle: StatsBundle | 
             )}
           </div>
           <div>
-            <h3>
-              이 글로 들어온 검색어 <PrepBadge />
-            </h3>
+            <h3>이 글로 들어온 검색어{hasQueries ? null : <> <PrepBadge /></>}</h3>
             <ul className="v3-list">
-              <li>
-                <span>—</span>
-                <span className="v3-val">—</span>
-              </li>
+              {queries.length === 0 ? (
+                <li>
+                  <span>—</span>
+                  <span className="v3-val">—</span>
+                </li>
+              ) : (
+                queries.map((item) => (
+                  <li key={item.query}>
+                    <span>{item.query}</span>
+                    <span className="v3-val">
+                      {item.impressions.toLocaleString("ko-KR")}회 노출 · {item.clicks.toLocaleString("ko-KR")}회 클릭
+                    </span>
+                  </li>
+                ))
+              )}
             </ul>
-            <p className="v3-tiny">검색어와 페이지를 함께 받기 시작하면 표시합니다.</p>
+            <p className="v3-tiny">
+              {hasQueries
+                ? queries.length === 0
+                  ? "이 기간에 이 글로 들어온 구글 검색어가 없습니다."
+                  : "구글 검색 기준 · 클릭 많은 순"
+                : "검색어와 페이지를 함께 받기 시작하면 표시합니다."}
+            </p>
           </div>
         </div>
       </td>
@@ -130,6 +149,7 @@ function ContentTable({ rows, bundle, year }: { rows: ContentRow[]; bundle: Stat
   const visible = all ? shown : shown.slice(0, FIRST_ROWS);
   const open = expanded === undefined ? shown[0]?.path : expanded;
   const maxViews = Math.max(0, ...rows.map((row) => row.views ?? 0));
+  const dwell = useMemo(() => dwellByPath(bundle), [bundle]);
 
   function sortBy(id: SortKey) {
     if (id === sortKey) setAscending((value) => !value);
@@ -177,9 +197,7 @@ function ContentTable({ rows, bundle, year }: { rows: ContentRow[]; bundle: Stat
               <th>순위</th>
               <th>제목</th>
               <SortHead id="views" label="조회" sortKey={sortKey} ascending={ascending} onSort={sortBy} />
-              <th className="v3-num">
-                평균 머문 시간 <PrepBadge />
-              </th>
+              <th className="v3-num">평균 머문 시간{dwell ? null : <> <PrepBadge /></>}</th>
               <SortHead id="entries" label="여기로 들어온 수" sortKey={sortKey} ascending={ascending} onSort={sortBy} />
               <th>주로 어디서</th>
               <SortHead id="bounce" label="그냥 나간 비율" sortKey={sortKey} ascending={ascending} onSort={sortBy} />
@@ -218,7 +236,7 @@ function ContentTable({ rows, bundle, year }: { rows: ContentRow[]; bundle: Stat
                         {intKo(row.views) ?? "—"}
                       </span>
                     </td>
-                    <td className="v3-num">—</td>
+                    <td className="v3-num">{durationText(dwell?.get(row.path) ?? null) ?? "—"}</td>
                     <td className="v3-num">{intKo(row.entries) ?? "—"}</td>
                     <td>
                       {row.sources ? (

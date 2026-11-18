@@ -43,6 +43,48 @@ export type KeyCompare = {
   impressions: MetricCompare;
   ctr: MetricCompare;
   position: MetricCompare;
+  /** page_engagement 의 글별 평균 참여 시간(초). 옛 응답에는 없다 */
+  avg_seconds?: MetricCompare;
+};
+
+/** 목표 키워드(3-8) 한 줄의 노출·클릭·순위 */
+export type TargetKeywordMetrics = { impressions: number; clicks: number; position: number | null };
+
+/** kind=target_keywords 응답. 홈페이지 lib/stats/target-keywords-core.ts 와 같은 모양 */
+export type TargetKeywordsPayload = {
+  total: number;
+  goal: number;
+  top10: number;
+  not_seen: number;
+  rows: {
+    id: number;
+    keyword: string;
+    lang: "ko" | "en";
+    keyword_group: string | null;
+    priority: number;
+    target_page: string | null;
+    current: TargetKeywordMetrics;
+    previous: TargetKeywordMetrics;
+    newly_seen: boolean;
+    related_queries: number;
+  }[];
+};
+
+/** 목표 키워드 설정 화면 한 줄(관리 API) */
+export type TargetKeywordItem = {
+  id: number;
+  keyword: string;
+  keyword_norm: string;
+  lang: "ko" | "en";
+  keyword_group: string | null;
+  priority: number;
+  target_page: string | null;
+  note: string | null;
+  active: boolean;
+  added_at: string;
+  removed_at: string | null;
+  updated_by: string | null;
+  updated_at: string;
 };
 
 type AiVisitsPeriodShape = {
@@ -111,6 +153,8 @@ export type StatsQueryResult = {
     current: AiVisitsPeriodShape;
     previous: AiVisitsPeriodShape;
   };
+  /** kind=target_keywords 일 때만. 목표 키워드 × 구글 검색어(정규화 완전 일치) */
+  target_keywords?: TargetKeywordsPayload;
   kind: string;
   /** 고른 기간 안의 일별 행 */
   current: StatsPoint[];

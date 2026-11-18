@@ -29,20 +29,20 @@ export const V3_SCREENS: { id: V3ScreenId; href: string; label: string; kinds: s
     id: "content",
     href: "/website/stats-v3/content",
     label: "콘텐츠",
-    kinds: ["daily", "page", "landing", "landing_channel", "ai_visits"]
+    kinds: ["daily", "page", "landing", "landing_channel", "ai_visits", "page_engagement", "query_page"]
   },
   {
     id: "search",
     href: "/website/stats-v3/search",
     label: "검색",
-    kinds: ["daily", "query", "landing_channel"]
+    kinds: ["daily", "query", "landing_channel", "target_keywords", "query_page"]
   },
   { id: "ai", href: "/website/stats-v3/ai", label: "AI", kinds: ["bots", "ai_visits"] },
   {
     id: "visits",
     href: "/website/stats-v3/visits",
     label: "방문 패턴",
-    kinds: ["daily", "landing", "event", "country", "device"]
+    kinds: ["daily", "landing", "event", "country", "device", "hourly"]
   }
 ];
 
