@@ -50,12 +50,67 @@ export function markRoom(xs: number[], k: number, width: number, middle: number)
   return (prev >= middle ? gap : gap / 2) - pad * 2;
 }
 
-/** 1 · 2 · 5 × 10ⁿ 으로 올린다 */
-function niceMax(value: number): number {
-  if (!(value > 0)) return 1;
-  const exp = 10 ** Math.floor(Math.log10(value));
-  const step = [1, 2, 2.5, 5, 10].find((n) => n * exp >= value) ?? 10;
-  return step * exp;
+/**
+ * 세로축 범위 — 그린 값 전체(이번·앞 기간)의 최솟값~최댓값에 맞춘다 (11-23 블루진 지시: 위가 비지 않게).
+ * 위아래로 범위의 10%를 띄우고, 눈금 셋(아래·가운데·위)이 깔끔한 숫자가 되도록 간격을 1·2·2.5·5 × 10ⁿ 에서 고른다.
+ * 값이 모두 0 이상이면 아래 끝은 0 밑으로 내려가지 않고, 값이 모두 정수면 간격도 정수로 잡는다.
+ * format 을 주면 눈금 글자 셋이 서로 다를 때까지 단위를 키운다(예: 1.41·1.42 가 모두 「1.4」로 보이지 않게).
+ * 어떤 경우든 lo < hi 인 유한한 범위를 돌려준다.
+ */
+export function yRange(values: number[], format?: (value: number) => string): { lo: number; hi: number } {
+  let min = Infinity;
+  let max = -Infinity;
+  let whole = true;
+  let any = false;
+  for (const v of values) {
+    if (!Number.isFinite(v)) continue;
+    any = true;
+    if (v < min) min = v;
+    if (v > max) max = v;
+    if (!Number.isInteger(v)) whole = false;
+  }
+  if (!any) return { lo: 0, hi: 1 };
+
+  const pad = max > min ? (max - min) * 0.1 : Math.abs(max) * 0.1 || 1;
+  let lo0 = min - pad;
+  const hi0 = max + pad;
+  if (min >= 0) lo0 = Math.max(0, lo0);
+  const spanOk = Number.isFinite(hi0 - lo0) && hi0 - lo0 > 0;
+
+  // 단위 후보: 범위의 1/4 이상인 1·2·2.5·5 × 10ⁿ 를 작은 것부터 (정수 자료면 정수 단위만)
+  const units: number[] = [];
+  if (spanOk) {
+    const quarter = (hi0 - lo0) / 4;
+    let exp = 10 ** Math.floor(Math.log10(quarter));
+    for (let k = 0; k < 6 && Number.isFinite(exp) && exp > 0; k++, exp *= 10) {
+      for (const n of [1, 2, 2.5, 5]) {
+        const step = n * exp;
+        if (step < quarter * (1 - 1e-9)) continue;
+        if (whole && (step < 1 || !Number.isInteger(step))) continue;
+        units.push(step);
+      }
+    }
+  }
+
+  const tidy = (v: number) => Number(v.toPrecision(12));
+  const valid = (r: { lo: number; hi: number }) =>
+    Number.isFinite(r.lo) && Number.isFinite(r.hi) && r.hi > r.lo && Number.isFinite(r.hi - r.lo);
+  const distinct = (r: { lo: number; hi: number }) =>
+    !format || new Set([r.lo, (r.lo + r.hi) / 2, r.hi].map((v) => format(v))).size === 3;
+
+  for (const unit of units) {
+    const lo = tidy(Math.floor(lo0 / unit) * unit);
+    let hi = tidy(Math.ceil(hi0 / unit) * unit);
+    if (whole && (hi - lo) % 2 !== 0) hi = tidy(hi + unit); // 가운데 눈금도 정수가 되게
+    const r = { lo, hi };
+    if (valid(r) && distinct(r)) return r;
+  }
+  // 깔끔한 단위로 못 맞추면 여유 범위 그대로, 그것도 안 되면 값 ± 1
+  const raw = { lo: lo0, hi: hi0 };
+  if (valid(raw)) return raw;
+  const mid = Number.isFinite(max) ? max : 0;
+  const fallback = { lo: mid - 1, hi: mid + 1 };
+  return valid(fallback) ? fallback : { lo: 0, hi: 1 };
 }
 
 /** 가로축 글자를 붙일 점 — 많아도 most 자리 */
@@ -129,15 +184,17 @@ function lookClass(look: ChartSeries["look"]): string {
   return typeof look === "number" ? `v3-ser v3-ser-${look % 6}` : look === "previous" ? "v3-ser-prev" : "v3-ser-cur";
 }
 
-function SeriesChart({ labels, series, mini, area, marks = [], format, ariaLabel, tip, initialActive }: SeriesChartProps) {
+function SeriesChart({ labels, series: rawSeries, mini, area, marks = [], format, ariaLabel, tip, initialActive }: SeriesChartProps) {
+  // NaN·Infinity 는 기록 없는 날(null)과 같게 — 선을 그 자리에서 끊는다
+  const series = rawSeries.map((s) => ({ ...s, values: s.values.map((v) => (typeof v === "number" && Number.isFinite(v) ? v : null)) }));
   const [active, setActive] = useState<number | null>(initialActive ?? null);
   const h = mini ? 150 : 230;
   const base = h - 26;
   const top = mini ? 18 : marks.length > 0 ? 50 : 22;
   const count = labels.length;
   const values = series.flatMap((s) => s.values).filter((v): v is number => typeof v === "number");
-  const max = niceMax(Math.max(0, ...values) * 1.15);
-  const yOf = (v: number) => base - ((base - top) * v) / max;
+  const { lo, hi } = yRange(values, format);
+  const yOf = (v: number) => base - (base - top) * ((v - lo) / (hi - lo));
   const xs = labels.map((_, i) => xPercent(i, count));
   const ticks = tickIndexes(count, mini ? 5 : 7);
   const plotGuess = mini ? PLOT_GUESS.mini : PLOT_GUESS.full;
@@ -177,7 +234,7 @@ function SeriesChart({ labels, series, mini, area, marks = [], format, ariaLabel
         <svg className="v3-chart-y" height={h} aria-hidden="true">
           {[0, 0.5, 1].map((f) => (
             <text key={f} x="100%" dx="-6" y={base - (base - top) * f + 4} textAnchor="end">
-              {format(max * f)}
+              {format(lo + (hi - lo) * f)}
             </text>
           ))}
         </svg>
