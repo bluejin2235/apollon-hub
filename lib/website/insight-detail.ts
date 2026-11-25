@@ -33,6 +33,8 @@ export type InsightBlock = {
   embed_provider: string | null;
   embed_url: string | null;
   embed_note: Loc | null;
+  /** 이미지+글·영상+글의 글 위치 (11-25 추가). 없으면 공개 화면 기본값 */
+  text_side?: "left" | "right" | null;
   updated_at: string;
   insight_images?: BlockImage[] | null;
 };

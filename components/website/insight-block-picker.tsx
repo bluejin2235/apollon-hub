@@ -69,6 +69,8 @@ const ITEMS: {
     tab: "image",
     diagram: "quint"
   },
+  workItem("offset", "image"),
+  workItem("offset-reverse", "image"),
   {
     preset: "gallery-auto",
     name: PRESET_LABEL["gallery-auto"],
@@ -90,6 +92,12 @@ const ITEMS: {
     tab: "image",
     diagram: "carousel"
   },
+  workItem("compare", "image"),
+  workItem("text-split", "text"),
+  workItem("text-triple", "text"),
+  workItem("image-text", "image-text"),
+  workItem("text-image", "image-text"),
+  workItem("portrait-text", "image-text"),
   {
     preset: "video-full",
     name: PRESET_LABEL["video-full"],
@@ -97,6 +105,7 @@ const ITEMS: {
     tab: "video",
     diagram: "video-full"
   },
+  workItem("video-text", "video"),
   {
     preset: "embed",
     name: PRESET_LABEL.embed,
@@ -106,14 +115,24 @@ const ITEMS: {
   }
 ];
 
-const TABS = PICKER_TABS.filter(
-  (tab) =>
-    tab.id === "all" ||
-    tab.id === "text" ||
-    tab.id === "image" ||
-    tab.id === "video" ||
-    tab.id === "embed"
-);
+/** 워크 블록 추가 목록과 같은 이름·설명·그림 (11-25 워크에만 있던 9개) */
+function workItem(preset: string, tab: Exclude<PickerTabId, "all">) {
+  return {
+    preset,
+    name: PRESET_LABEL[preset] ?? preset,
+    description: PRESET_DESCRIPTION[preset] ?? "",
+    tab,
+    diagram: preset
+  };
+}
+
+/** 워크와 같은 분류 단추 (전체·이미지·글·이미지+글·영상·임베드) */
+const TABS = PICKER_TABS;
+
+/** 2단·3단 글 칸 수 */
+const COLUMN_COUNT: Record<string, number> = { "text-split": 2, "text-triple": 3 };
+/** 서식 없는 한 칸 글로 시작하는 워크식 모듈 */
+const PLAIN_BODY_PRESETS = new Set(["image-text", "text-image", "portrait-text", "video-text"]);
 
 type Props = {
   open: boolean;
@@ -154,9 +173,14 @@ export function InsightBlockPicker({
       body.question = { ko: "", en: "" };
       body.answer = { ko: "", en: "" };
     }
-    if (preset === "video-full") {
+    if (preset === "video-full" || preset === "video-text") {
       body.video_kind = "hosted";
       body.video_url = "";
+    }
+    if (PLAIN_BODY_PRESETS.has(preset)) body.body = { ko: "", en: "" };
+    const cols = COLUMN_COUNT[preset];
+    if (cols) {
+      body.body = { columns: Array.from({ length: cols }, () => ({ ko: "", en: "" })) };
     }
     if (preset === "embed") {
       body.embed_provider = "youtube";

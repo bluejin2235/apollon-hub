@@ -51,7 +51,7 @@ import {
   sanitizeInsightHtml
 } from "@/lib/website/insight-html";
 import type { InsightBlock } from "@/lib/website/insight-detail";
-import { asLoc, fileName, mediaUrl, type Loc } from "@/lib/website/work-detail";
+import { asLoc, columnsFromBody, fileName, mediaUrl, type Loc } from "@/lib/website/work-detail";
 import { formatPixelSize, SmallImageMarks } from "@/components/website/small-image-confirm";
 
 const PRESET_LABEL: Record<string, string> = {
@@ -66,18 +66,59 @@ const PRESET_LABEL: Record<string, string> = {
   stack: "위아래 두 장",
   carousel: "가로 스크롤",
   "video-full": "영상 전폭",
-  embed: "임베드"
+  embed: "임베드",
+  // 11-25 워크 모듈에서 가져온 9개 (이름은 워크와 같게)
+  offset: "가로 + 세로",
+  "offset-reverse": "세로 + 가로",
+  compare: "전후 비교",
+  "text-split": "2단 글",
+  "text-triple": "3단 글",
+  "image-text": "이미지 + 글 나란히",
+  "text-image": "글 + 큰 이미지",
+  "portrait-text": "세로 이미지 + 글",
+  "video-text": "영상 + 글"
 };
+
+/** 글이 한 칸(서식 없는 글자)인 워크식 모듈. 글 위치를 고른다 */
+const PLAIN_BODY_PRESETS = new Set(["image-text", "text-image", "portrait-text", "video-text"]);
+/** 2단·3단 글 칸 수 */
+const COLUMN_COUNT: Record<string, number> = { "text-split": 2, "text-triple": 3 };
+/** 영상 파일·주소를 받는 모듈 */
+const VIDEO_PRESETS = new Set(["video-full", "video-text"]);
+
+/** 영상 주소의 종류. 파일(MP4 등·Storage)은 hosted, 유튜브·비메오는 embed, 모르면 지금 값 */
+export function videoKindForUrl(url: string, current: string | null | undefined): string {
+  const value = url.trim();
+  if (/\.(mp4|webm|mov|m4v)(?:$|[?#])/i.test(value) || /\/storage\/v1\/object\//i.test(value)) {
+    return "hosted";
+  }
+  if (/^https?:\/\/(?:www\.|m\.)?(?:youtube\.com|youtu\.be|vimeo\.com|player\.vimeo\.com)\//i.test(value)) {
+    return "embed";
+  }
+  if (!/^https?:\/\//i.test(value)) return current || "hosted";
+  return current || "embed";
+}
+
+/** 공개 화면(워크 ImageTextBlock·VideoBlock)과 같은 기본 글 위치 */
+function defaultTextSide(preset: string): "left" | "right" {
+  return preset === "text-image" ? "left" : "right";
+}
 
 /** 글 계열 → accent, 이미지 → pro, 영상·임베드 → success */
 function familyClass(preset: string): "fam-accent" | "fam-pro" | "fam-success" {
-  if (preset === "text" || preset === "qa") return "fam-accent";
-  if (preset === "video-full" || preset === "embed") return "fam-success";
+  if (preset === "text" || preset === "qa" || preset in COLUMN_COUNT) return "fam-accent";
+  if (VIDEO_PRESETS.has(preset) || preset === "embed") return "fam-success";
   return "fam-pro";
 }
 
 function insightImageLimit(preset: string): number | null {
-  if (preset === "text" || preset === "qa" || preset === "video-full" || preset === "embed") {
+  if (
+    preset === "text" ||
+    preset === "qa" ||
+    VIDEO_PRESETS.has(preset) ||
+    preset === "embed" ||
+    preset in COLUMN_COUNT
+  ) {
     return 0;
   }
   return imageLimitForPreset(preset);
@@ -144,6 +185,13 @@ export function InsightBlockCard({
   const [bodyOpen, setBodyOpen] = useState(false);
   const [save, setSave] = useState<SaveState>("idle");
   const [body, setBody] = useState<Loc>(asLoc(block.body));
+  const columnCount = COLUMN_COUNT[block.preset] ?? 0;
+  const [columns, setColumns] = useState<Loc[]>(() =>
+    columnsFromBody(block.body, columnCount || 2)
+  );
+  const [textSide, setTextSide] = useState<"left" | "right">(
+    block.text_side ?? defaultTextSide(block.preset)
+  );
   const [question, setQuestion] = useState<Loc>(asLoc(block.question));
   const [answer, setAnswer] = useState<Loc>(asLoc(block.answer));
   const [videoUrl, setVideoUrl] = useState(block.video_url ?? "");
@@ -176,6 +224,8 @@ export function InsightBlockCard({
       return;
     }
     setBody(asLoc(block.body));
+    setColumns(columnsFromBody(block.body, COLUMN_COUNT[block.preset] || 2));
+    setTextSide(block.text_side ?? defaultTextSide(block.preset));
     setQuestion(asLoc(block.question));
     setAnswer(asLoc(block.answer));
     setVideoUrl(block.video_url ?? "");
@@ -236,23 +286,28 @@ export function InsightBlockCard({
 
   function buildFullPatch(): Record<string, unknown> {
     const patch: Record<string, unknown> = {};
-    if (block.preset === "text") {
+    if (block.preset === "text" || PLAIN_BODY_PRESETS.has(block.preset)) {
       patch.body = body;
+    }
+    if (columnCount > 0) {
+      patch.body = { columns };
+    }
+    if (PLAIN_BODY_PRESETS.has(block.preset)) {
+      patch.text_side = textSide;
     }
     if (block.preset === "qa") {
       patch.question = question;
       patch.answer = answer;
     }
-    if (block.preset === "video-full") {
+    if (VIDEO_PRESETS.has(block.preset)) {
       const trimmed = videoUrl.trim();
       if (!trimmed) {
         patch.video_kind = "hosted";
         patch.video_url = "";
-      } else if (/^https?:\/\//i.test(trimmed)) {
-        patch.video_kind = "embed";
-        patch.video_url = trimmed;
       } else {
-        patch.video_kind = block.video_kind || "hosted";
+        // 올린 MP4(Storage 주소 포함)는 hosted, 유튜브·비메오 주소만 embed.
+        // 전에는 https 주소면 모두 embed 로 바꿔, 글만 고쳐도 올린 영상이 재생 안 되게 저장됐다
+        patch.video_kind = videoKindForUrl(trimmed, block.video_kind);
         patch.video_url = trimmed;
       }
     }
@@ -371,19 +426,24 @@ export function InsightBlockCard({
   flushDirtyRef.current = flushDirty;
 
   async function onClone() {
+    // 고친 내용이 아직 저장 전이거나 막 저장돼 block 이 옛값일 수 있다. 먼저 저장하고, 화면의 지금 값으로 복제한다
+    const flushed = await flushDirtyRef.current();
+    if (!flushed) return;
+    const current = buildFullPatch();
     const res = await createInsightBlock(insightId, {
       section_id: block.section_id,
       preset: block.preset,
       sort: block.sort + 1,
-      body: block.body,
-      question: block.question,
-      answer: block.answer,
-      video_kind: block.video_kind,
-      video_url: block.video_url,
+      body: "body" in current ? current.body : block.body,
+      question: "question" in current ? current.question : block.question,
+      answer: "answer" in current ? current.answer : block.answer,
+      video_kind: "video_kind" in current ? current.video_kind : block.video_kind,
+      video_url: "video_url" in current ? current.video_url : block.video_url,
       poster: block.poster,
       embed_provider: block.embed_provider,
-      embed_url: block.embed_url,
-      embed_note: block.embed_note
+      embed_url: "embed_url" in current ? current.embed_url : block.embed_url,
+      embed_note: block.embed_note,
+      ...(PLAIN_BODY_PRESETS.has(block.preset) ? { text_side: textSide } : {})
     });
     if (!res.ok) {
       setError(res.error);
@@ -641,7 +701,7 @@ export function InsightBlockCard({
             />
           ) : null}
 
-          {block.preset === "video-full" ? (
+          {VIDEO_PRESETS.has(block.preset) ? (
             <div className="space-y-3">
               <Field label="영상 파일" tip="MP4. Storage 로 직접 올립니다.">
                 <ImageUploader
@@ -684,6 +744,103 @@ export function InsightBlockCard({
                 />
               </Field>
             </div>
+          ) : null}
+
+          {PLAIN_BODY_PRESETS.has(block.preset) ? (
+            <>
+              <Field
+                label="본문"
+                counts={[
+                  { label: "국문", value: body.ko.length },
+                  { label: "영문", value: body.en.length }
+                ]}
+              >
+                <div className="two">
+                  <div>
+                    <span className="tag">국문</span>
+                    <textarea
+                      className="i"
+                      value={body.ko}
+                      onChange={(e) => {
+                        const next = locField(body, "ko", e.target.value);
+                        setBody(next);
+                        queueChange({ body: next });
+                      }}
+                      onBlur={() => void flushDirtyRef.current()}
+                    />
+                  </div>
+                  <div>
+                    <span className="tag">영문</span>
+                    <textarea
+                      className="i"
+                      value={body.en}
+                      onChange={(e) => {
+                        const next = locField(body, "en", e.target.value);
+                        setBody(next);
+                        queueChange({ body: next });
+                      }}
+                      onBlur={() => void flushDirtyRef.current()}
+                    />
+                  </div>
+                </div>
+              </Field>
+              <p className="hint-line">
+                워크와 같은 서식 없는 글입니다. 굵게·소제목이 필요하면 「글」 블록을 쓰세요
+              </p>
+              <Field label="글 위치">
+                <div className="flex gap-2">
+                  {(["left", "right"] as const).map((side) => (
+                    <button
+                      key={side}
+                      type="button"
+                      className={textSide === side ? "btn sm acc" : "btn sm"}
+                      aria-pressed={textSide === side}
+                      onClick={() => {
+                        setTextSide(side);
+                        queueChange({ text_side: side });
+                      }}
+                    >
+                      {side === "left" ? "글 왼쪽" : "글 오른쪽"}
+                    </button>
+                  ))}
+                </div>
+              </Field>
+            </>
+          ) : null}
+
+          {columnCount > 0 ? (
+            <Field label="본문">
+              <div
+                className={
+                  columnCount === 3
+                    ? "grid grid-cols-1 gap-3 lg:grid-cols-3"
+                    : "grid grid-cols-1 gap-3 md:grid-cols-2"
+                }
+              >
+                {columns.slice(0, columnCount).map((col, colIndex) => (
+                  <div key={colIndex} className="space-y-2">
+                    <span className="tag">{colIndex + 1}번째 칸</span>
+                    {(["ko", "en"] as const).map((lang) => (
+                      <textarea
+                        key={lang}
+                        className="i"
+                        placeholder={lang === "ko" ? "국문" : "영문"}
+                        value={col[lang]}
+                        onChange={(e) => {
+                          const next = columns.map((item, i) =>
+                            i === colIndex ? locField(item, lang, e.target.value) : item
+                          );
+                          setColumns(next);
+                          queueChange({ body: { columns: next.slice(0, columnCount) } });
+                        }}
+                        onBlur={() => void flushDirtyRef.current()}
+                      />
+                    ))}
+                  </div>
+                ))}
+              </div>
+              <p className="hint-line">칸끼리 길이를 비슷하게 맞추면 화면에서 높이가 어긋나지 않습니다</p>
+            </Field>
           ) : null}
 
           {block.preset === "embed" ? (
