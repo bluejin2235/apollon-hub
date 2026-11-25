@@ -2140,7 +2140,8 @@
 }
 .wa .row-news {
   display: grid;
-  grid-template-columns: 170px minmax(0, 1fr) 140px;
+  /* 출처 이름은 「에스원 리서치팀, 「…보고서」 기획주제 …」처럼 길 수 있어 원문 주소와 같은 폭 */
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 140px;
   gap: 10px;
   align-items: start;
 }

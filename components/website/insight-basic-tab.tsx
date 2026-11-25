@@ -101,9 +101,9 @@ const HELP = {
   },
   news: {
     title: "출처",
-    use: "상세 상단에 「서울경제 · 원문보기」로 나옵니다",
+    use: "상세 상단 날짜 옆에 「출처 ZDNET」처럼 나옵니다. 원문 주소가 있으면 링크가 걸리고, 없으면 글로만 나옵니다",
     rule: "선택. 비워도 공개됩니다",
-    note: "매체 이름 · 원문 주소 · 보도일. 모든 분류에서 같습니다",
+    note: "출처 이름 · 원문 주소(없어도 됨) · 보도일. 출처 이름은 길어도 됩니다. 예: 에스원 리서치팀, 「2026년 3분기 오피스시장 동향 보고서」 기획주제 「미디어 아키텍처와 부동산 공간의 진화」. 모든 분류에서 같습니다",
     empty: "상세 상단에 출처 줄이 나오지 않습니다"
   },
   key: {
@@ -690,7 +690,7 @@ export function InsightBasicTab({ draft, onChange, insight, categories, siteUrl,
                     onChange={(e) => patchScreen({ press_outlet: e.target.value })}
                     onBlur={() => void screenAuto.flush()}
                   />
-                  <p className="hint-line">매체 이름</p>
+                  <p className="hint-line">출처 이름 (매체 이름·자료 이름, 길어도 됩니다)</p>
                 </div>
                 <div>
                   <input
@@ -699,7 +699,7 @@ export function InsightBasicTab({ draft, onChange, insight, categories, siteUrl,
                     onChange={(e) => patchScreen({ press_href: e.target.value })}
                     onBlur={() => void screenAuto.flush()}
                   />
-                  <p className="hint-line">원문 주소</p>
+                  <p className="hint-line">원문 주소 (없으면 링크 없이 글로만 나옵니다)</p>
                 </div>
                 <div>
                   <input
