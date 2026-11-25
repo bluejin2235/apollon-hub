@@ -196,5 +196,7 @@ export function buildPathFlow(bundle: StatsBundle | null, titles: TitleMap): Flo
     step(3, third);
   }
 
-  return { nodes, links, total, hasMoves: moveCount > 0 };
+  // 그려진 이동 띠가 있을 때만 참 (이동이 「그 밖의 페이지」에서만 났으면 그리지 않으므로 거짓)
+  const hasMoves = moveCount > 0 && links.some((item) => item.unit === "번" && nodes[item.target].kind !== "exit");
+  return { nodes, links, total, hasMoves };
 }

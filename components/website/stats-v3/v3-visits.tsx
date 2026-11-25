@@ -378,7 +378,8 @@ function PathFlowCard({ bundle, status, catalog, today }: Pick<V3ScreenProps, "b
         <>
           <PathFlow model={model} />
           <p className="v3-tiny">
-            뒤 두 칸은 그 페이지를 본 모든 방문의 다음 행동이라, 앞 칸에서 들어온 굵기와 같지 않아요.
+            뒤 두 칸은 한 사람의 이어진 경로가 아니라, 그 페이지를 본 모든 방문이 다음에 간 곳을 페이지마다 따로 센 값이에요. 그래서
+            앞 칸에서 들어온 굵기와 같지 않아요. 「여기서 나감」은 창 닫기·다른 사이트로 이동 때 남는 기록이라 새로고침도 섞일 수 있어요.
             {movesStartLate ? ` 페이지 사이 이동은 ${dayText(PAGE_FLOW_SINCE, year)}부터, 나감은 ${dayText(PAGE_EXIT_SINCE, year)}부터 기록이 있어요.` : ""}
             {model.hasMoves ? "" : " 이 기간에는 페이지 사이 이동 기록이 아직 없어요."}
           </p>
