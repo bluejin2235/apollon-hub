@@ -65,7 +65,7 @@ export const V3_SCREENS: { id: V3ScreenId; href: string; label: string; kinds: s
     id: "behavior",
     href: "/website/stats/behavior",
     label: "방문 패턴",
-    kinds: ["daily", "landing", "landing_channel", "ai_visits", "page_exit", "event", "country", "device", "hourly"]
+    kinds: ["daily", "landing", "landing_channel", "ai_visits", "page_exit", "page_flow", "event", "country", "device", "hourly"]
   }
 ];
 

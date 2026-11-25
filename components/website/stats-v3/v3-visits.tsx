@@ -44,6 +44,8 @@ import {
 } from "@/components/website/stats-v3/v3-visits-data";
 import { makeCountDelta, previousIsOldSite, readActualRange } from "@/components/website/stats/stats-data";
 import { hourGrid, peakCell } from "@/components/website/stats-v3/v3-fill-data";
+import { buildPathFlow, PAGE_FLOW_SINCE } from "@/components/website/stats-v3/v3-flow-data";
+import { PathFlow } from "@/components/website/stats-v3/v3-path-flow";
 
 const HEAT_DAYS = ["월", "화", "수", "목", "금", "토", "일"];
 const HEAT_SLOTS = ["00–03시", "03–06시", "06–09시", "09–12시", "12–15시", "15–18시", "18–21시", "21–24시"];
@@ -266,6 +268,7 @@ export function V3Visits({ bundle, status, fresh, today, catalog }: V3ScreenProp
           )
         }
       />
+      <PathFlowCard bundle={bundle} status={status} catalog={catalog} today={today} />
       <Flow bundle={bundle} status={status} catalog={catalog} today={today} />
       <div className="v3-metrics">
         {cards.map((item) => (
@@ -348,6 +351,42 @@ export function V3Visits({ bundle, status, fresh, today, catalog }: V3ScreenProp
         </div>
       </div>
     </>
+  );
+}
+
+/** 맨 위 흐름 그래프 — 들어온 방문 → 어디서 왔나 → 처음 본 페이지 → 다음 페이지 → 그다음 페이지 (나감 포함) */
+function PathFlowCard({ bundle, status, catalog, today }: Pick<V3ScreenProps, "bundle" | "status" | "catalog" | "today">) {
+  const year = Number(today.slice(0, 4));
+  const model = useMemo(() => buildPathFlow(bundle, titlesOf(catalog)), [bundle, catalog]);
+  const range = readActualRange(bundle);
+  const movesStartLate = range ? range.actualFrom < PAGE_FLOW_SINCE : true;
+  return (
+    <div className="v3-card">
+      <div className="v3-card-head">
+        <div>
+          <h2>들어와서 · 거쳐서 · 나가는 흐름</h2>
+          <p className="v3-card-sub">
+            앞 세 칸은 방문 횟수(GA 첫 페이지와 채널), 뒤 두 칸은 그 페이지에서 옮겨 간 횟수와 사이트를 떠난 횟수예요. 국문·영문 같은
+            페이지는 합쳤어요. 띠에 마우스를 올리면 정확한 수가 나와요.
+          </p>
+        </div>
+        {range ? <span className="v3-tiny">{rangeText(range.actualFrom, range.actualTo, year)}</span> : null}
+      </div>
+      {status !== "ready" ? (
+        <StatusLine status={status} />
+      ) : model ? (
+        <>
+          <PathFlow model={model} />
+          <p className="v3-tiny">
+            뒤 두 칸은 그 페이지를 본 모든 방문의 다음 행동이라, 앞 칸에서 들어온 굵기와 같지 않아요.
+            {movesStartLate ? ` 페이지 사이 이동은 ${dayText(PAGE_FLOW_SINCE, year)}부터, 나감은 ${dayText(PAGE_EXIT_SINCE, year)}부터 기록이 있어요.` : ""}
+            {model.hasMoves ? "" : " 이 기간에는 페이지 사이 이동 기록이 아직 없어요."}
+          </p>
+        </>
+      ) : (
+        <EmptyText>이 기간에는 값이 없어요.</EmptyText>
+      )}
+    </div>
   );
 }
 

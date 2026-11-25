@@ -1696,6 +1696,38 @@
   }
 }
 
+/* ─────────── 방문 패턴 · 들어와서 거쳐서 나가는 흐름 (산키) ─────────── */
+
+.v3-pf-scroll {
+  overflow-x: auto;
+  margin: 6px 0 4px;
+}
+
+.v3-pf {
+  width: 1080px;
+}
+
+.v3-pf-heads text {
+  fill: var(--muted);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.v3-pf-name {
+  fill: var(--muted);
+  font-size: 11px;
+}
+
+.v3-pf-count {
+  fill: var(--ink);
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+}
+
+.v3-pf-link:hover {
+  stroke-opacity: 0.5;
+}
+
 /* AI 화면 — 읽어 갔나 · 사람이 왔나는 나란히, 답변에 나오나는 표가 넓어 한 줄 전체 */
 
 .v3 .v3-ai-grid {
