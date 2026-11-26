@@ -73,6 +73,10 @@ type Props = {
 
 type PendingExtra = { key: string; name: string; path: string };
 
+/** 검색 제목(국문): 권장 길이(넘으면 경고만) · 최대(홈페이지 서버와 같음) */
+const SEARCH_TITLE_KO_RECOMMENDED = 60;
+const SEARCH_TITLE_KO_MAX = 120;
+
 type HelpBody = {
   title: string;
   use: string;
@@ -495,7 +499,8 @@ export function WorkBasicTab({ draft, onChange, work, categories, siteUrl, onRel
         ko: d.location_country.ko,
         en: d.location_country.en
       },
-      location_en: d.location_en.trim() || null
+      location_en: d.location_en.trim() || null,
+      search_title_ko: d.search_title_ko.trim() || null
     });
     if (!res.ok) {
       showToast({ tone: "error", message: apiFailMessage(res) });
@@ -894,6 +899,33 @@ export function WorkBasicTab({ draft, onChange, work, categories, siteUrl, onRel
               body={HELP.title}
               onClose={() => setOpenHelp(null)}
             />
+          </div>
+
+          <div className="f">
+            <div className="fl">
+              <span className="nm">검색 제목(국문)</span>
+              <span className="cc">
+                <b className={draft.search_title_ko.length > SEARCH_TITLE_KO_RECOMMENDED ? "over" : undefined}>
+                  {draft.search_title_ko.length}
+                </b>
+                /{SEARCH_TITLE_KO_RECOMMENDED}
+              </span>
+            </div>
+            <input
+              className="i"
+              maxLength={SEARCH_TITLE_KO_MAX}
+              placeholder="비우면 제목이 그대로 쓰입니다"
+              value={draft.search_title_ko}
+              onChange={(e) => {
+                writeDraft({ search_title_ko: e.target.value.slice(0, SEARCH_TITLE_KO_MAX) });
+                screenAuto.schedule();
+              }}
+              onBlur={() => void screenAuto.flush()}
+            />
+            <p className="hint-line">국문 페이지의 검색 결과와 브라우저 탭에 나옵니다. 화면 큰 제목은 바뀌지 않습니다.</p>
+            {draft.search_title_ko.length > SEARCH_TITLE_KO_RECOMMENDED ? (
+              <p className="hint-line warn">{SEARCH_TITLE_KO_RECOMMENDED}자가 넘으면 검색 결과에서 뒷부분이 잘릴 수 있습니다.</p>
+            ) : null}
           </div>
 
           <div className="f">
