@@ -1781,6 +1781,29 @@
   color: var(--faint);
   text-align: right;
 }
+/* 워크 제목: 국문 검색 제목 쓰는 법 안내 (11-26) */
+.wa .title-guide {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: #f6f8fb;
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--dim);
+}
+.wa .title-guide > b {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--ink, #0f172a);
+}
+.wa .title-guide ul {
+  margin: 0;
+  padding-left: 16px;
+  list-style: disc;
+}
+.wa .title-guide li + li {
+  margin-top: 2px;
+}
 .wa .lead-drop {
   border: 1px dashed #cbd5e1;
   border-radius: 8px;

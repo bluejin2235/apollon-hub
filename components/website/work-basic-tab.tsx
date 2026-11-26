@@ -884,48 +884,73 @@ export function WorkBasicTab({ draft, onChange, work, categories, siteUrl, onRel
               <button type="button" className="q" onClick={() => toggleHelp("title")}>
                 ?
               </button>
-              <span className="cc">영문 {titleCount}</span>
+              <span className="cc">
+                국문{" "}
+                <b className={draft.search_title_ko.length > SEARCH_TITLE_KO_RECOMMENDED ? "over" : undefined}>
+                  {draft.search_title_ko.length}
+                </b>
+                /{SEARCH_TITLE_KO_RECOMMENDED} · 영문 {titleCount}
+              </span>
             </div>
-            <input
-              className="i"
-              value={titleEn}
-              onChange={(e) => setTitleEn(e.target.value)}
-              onBlur={() => void screenAuto.flush()}
-            />
-            <p className="hint-line">검색 결과에는 앞부분만 표시됩니다</p>
-            <p className="hint-line">영문으로만 입력합니다. 목록 카드와 상세 맨 위에 나옵니다</p>
+            <div className="seclang">
+              <span className="tag">국문</span>
+              <input
+                className="i"
+                maxLength={SEARCH_TITLE_KO_MAX}
+                placeholder="예: 롯데면세점 명동 스타에비뉴 미디어 공간 리뉴얼"
+                value={draft.search_title_ko}
+                onChange={(e) => {
+                  writeDraft({ search_title_ko: e.target.value.slice(0, SEARCH_TITLE_KO_MAX) });
+                  screenAuto.schedule();
+                }}
+                onBlur={() => void screenAuto.flush()}
+              />
+            </div>
+            <div className="seclang">
+              <span className="tag">영문</span>
+              <input
+                className="i"
+                value={titleEn}
+                onChange={(e) => setTitleEn(e.target.value)}
+                onBlur={() => void screenAuto.flush()}
+              />
+            </div>
+            {draft.search_title_ko.length > SEARCH_TITLE_KO_RECOMMENDED ? (
+              <p className="hint-line warn">
+                국문이 {SEARCH_TITLE_KO_RECOMMENDED}자를 넘으면 검색 결과에서 뒷부분이 잘릴 수 있습니다.
+              </p>
+            ) : null}
+            <p className="hint-line">
+              국문은 국문 페이지의 검색 결과와 브라우저 탭에만 나옵니다. 화면 큰 제목과 목록 카드는 영문이 나옵니다. 국문을
+              비우면 영문이 쓰입니다.
+            </p>
+            <div className="title-guide">
+              <b>국문 제목 쓰는 법 (검색·AI 답변용)</b>
+              <ul>
+                <li>
+                  <b>장소 + 무엇 + 작품 이름</b> 순서로 씁니다. 사람들은 「롯데면세점 미디어」, 「인스파이어 고래쇼」처럼 장소와
+                  형식으로 찾습니다.
+                </li>
+                <li>
+                  장소는 사람들이 실제로 부르는 이름으로 씁니다(스타에비뉴, 인스파이어 리조트, 빛의 시어터). 지역이 알려져 있으면
+                  붙입니다(명동, 부산 오시리아).
+                </li>
+                <li>
+                  「무엇」은 한국어 일반 낱말로 씁니다: 미디어아트, 미디어 쇼, 미디어 파사드, 아나모픽, 미디어 조형물.
+                </li>
+                <li>영문 작품 이름은 「」에 넣어 뒤에 붙입니다. 예: 인스파이어 리조트 고래쇼 「Under the Blueland」</li>
+                <li>회사 이름은 넣지 않습니다. 검색 결과에 「| 아폴론이머시브웍스」가 자동으로 붙습니다.</li>
+                <li>
+                  20~40자가 알맞습니다. 「최고」, 「혁신적인」 같은 꾸밈말은 넣지 않습니다. AI 답변은 무엇을 어디에 했는지
+                  한 줄로 알 수 있는 제목을 인용합니다.
+                </li>
+              </ul>
+            </div>
             <HelpPanel
               open={openHelp === "title"}
               body={HELP.title}
               onClose={() => setOpenHelp(null)}
             />
-          </div>
-
-          <div className="f">
-            <div className="fl">
-              <span className="nm">검색 제목(국문)</span>
-              <span className="cc">
-                <b className={draft.search_title_ko.length > SEARCH_TITLE_KO_RECOMMENDED ? "over" : undefined}>
-                  {draft.search_title_ko.length}
-                </b>
-                /{SEARCH_TITLE_KO_RECOMMENDED}
-              </span>
-            </div>
-            <input
-              className="i"
-              maxLength={SEARCH_TITLE_KO_MAX}
-              placeholder="비우면 제목이 그대로 쓰입니다"
-              value={draft.search_title_ko}
-              onChange={(e) => {
-                writeDraft({ search_title_ko: e.target.value.slice(0, SEARCH_TITLE_KO_MAX) });
-                screenAuto.schedule();
-              }}
-              onBlur={() => void screenAuto.flush()}
-            />
-            <p className="hint-line">국문 페이지의 검색 결과와 브라우저 탭에 나옵니다. 화면 큰 제목은 바뀌지 않습니다.</p>
-            {draft.search_title_ko.length > SEARCH_TITLE_KO_RECOMMENDED ? (
-              <p className="hint-line warn">{SEARCH_TITLE_KO_RECOMMENDED}자가 넘으면 검색 결과에서 뒷부분이 잘릴 수 있습니다.</p>
-            ) : null}
           </div>
 
           <div className="f">
